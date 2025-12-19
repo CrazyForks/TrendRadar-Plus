@@ -25,11 +25,11 @@
         body {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            padding: 5px 0;
+            padding: 24px 0 56px;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
         }
 
-        .main-container { max-width: 1400px; margin: 0 auto; padding: 0 15px; }
+        .main-container { max-width: 1400px; margin: 0 auto; padding: 0 15px; min-height: calc(100vh - 80px); display: flex; flex-direction: column; gap: 10px; }
 
         .header-card {
             background: white;
@@ -40,11 +40,14 @@
         }
 
         .header-title {
-            font-size: 1.2rem;
-            font-weight: 700;
-            color: var(--primary-color);
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: 0.2px;
+            color: #111827;
             margin-bottom: 0;
-            display: inline;
         }
         
         .header-subtitle { display: inline; font-size: 0.75rem; color: #6b7280; margin-left: 10px; }
@@ -54,6 +57,32 @@
             flex-wrap: wrap;
             gap: 5px;
             margin-top: 8px;
+        }
+
+        .online-chips {
+            display: inline-flex;
+            gap: 6px;
+            margin-left: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .online-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            line-height: 1;
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            color: rgba(255, 255, 255, 0.95);
+        }
+
+        .online-chip b {
+            font-weight: 800;
+            color: #ffffff;
         }
 
         .stat-card {
@@ -111,7 +140,8 @@
             border-radius: 10px;
             padding: 10px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            min-height: 300px;
+            min-height: 520px;
+            flex: 1;
         }
 
         .tab-pane { display: none; }
@@ -311,15 +341,14 @@
             color: #6b7280;
         }
 
-        .rank-badge {
-            background: linear-gradient(135deg, #fbbf24, #f59e0b);
-            color: white;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-weight: 600;
+        .rank-text {
+            display: inline-flex;
+            align-items: center;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #9ca3af;
+            letter-spacing: 0.2px;
         }
-
-        .rank-top { background: linear-gradient(135deg, #ef4444, #dc2626); }
 
         /* 过滤面板 */
         .filter-panel {
@@ -545,6 +574,9 @@
                 <div class="stat-card" style="background: linear-gradient(135deg, #3b82f6, #2563eb);">
                     <span class="stat-label">更新</span>
                     <span class="stat-value">{{ data.updated_at }}</span>
+                    <span class="online-chips" id="onlineChips" title="实时在线：按最近活跃时间统计">
+                        <span class="online-chip">在线 <b id="online5m">-</b></span>
+                    </span>
                 </div>
             </div>
 
@@ -602,7 +634,11 @@
                     <div class="platform-card" data-platform="{{ platform_id }}">
                         <div class="platform-header">
                             <div class="platform-name" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
-                                📱 {{ platform.name }} <span class="badge bg-secondary platform-count">{{ platform.news|length }}</span>
+                                📱 {{ platform.name }}
+                                <span class="badge bg-secondary" style="margin-left: 6px;">
+                                    显示 <span class="platform-visible-count">{{ platform.news|length }}</span>
+                                    / 总 <span class="platform-total-count">{{ platform.news|length }}</span>
+                                </span>
                             </div>
                             <button class="mark-all-btn" onclick="markAllInPlatform(this)" title="全部标记为已读">✔ 全部</button>
                         </div>
@@ -610,7 +646,7 @@
                             {% for news in platform.news[:category.news_limit] %}
                             <li class="news-item" data-news-id="{{ news.stable_id }}" data-news-title="{{ news.title }}">
                                 <div class="news-item-content">
-                                    <input type="checkbox" class="news-checkbox" onchange="markAsRead(this)" title="勾选隐藏">
+                                    <input type="checkbox" class="news-checkbox" onchange="markAsRead(this)" title="标记已读">
                                     <div class="news-title {% if news.is_cross_platform %}cross-platform{% endif %}" ondblclick="openLink(this)" data-url="{{ news.url or '' }}">
                                         {{ news.title }}
                                         {% if news.is_cross_platform %}
@@ -621,7 +657,7 @@
                                     </div>
                                 </div>
                                 <div class="news-meta">
-                                    <span class="rank-badge {% if news.rank <= 5 %}rank-top{% endif %}">#{{ news.rank }}</span>
+                                    <span class="rank-text">#{{ news.rank }}</span>
                                     <span>{{ news.timestamp }}</span>
                                 </div>
                             </li>
@@ -715,10 +751,8 @@
         
         function updatePlatformCount(card) {
             const visibleItems = card.querySelectorAll('.news-item:not(.read):not(.filtered)');
-            const countBadge = card.querySelector('.platform-count');
-            if (countBadge) {
-                countBadge.textContent = visibleItems.length;
-            }
+            const visibleEl = card.querySelector('.platform-visible-count');
+            if (visibleEl) visibleEl.textContent = visibleItems.length;
         }
         
         function updateAllCounts() {
@@ -1011,6 +1045,51 @@
         document.addEventListener('DOMContentLoaded', function() {
             applyPlatformFilter();
             restoreActiveTab();
+        });
+
+        // === 在线人数（心跳 + 统计） ===
+        const ONLINE_SESSION_KEY = 'trendradar_online_session_id';
+
+        function getOnlineSessionId() {
+            let id = localStorage.getItem(ONLINE_SESSION_KEY);
+            if (id) return id;
+            if (window.crypto && crypto.randomUUID) {
+                id = crypto.randomUUID();
+            } else {
+                id = 'sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+            }
+            localStorage.setItem(ONLINE_SESSION_KEY, id);
+            return id;
+        }
+
+        async function onlinePing() {
+            try {
+                await fetch('/api/online/ping', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: getOnlineSessionId() })
+                });
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        async function refreshOnlineStats() {
+            try {
+                const res = await fetch('/api/online');
+                const data = await res.json();
+                const el5 = document.getElementById('online5m');
+                if (el5) el5.textContent = data.online_5m ?? '-';
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            onlinePing();
+            refreshOnlineStats();
+            setInterval(onlinePing, 15000);
+            setInterval(refreshOnlineStats, 10000);
         });
 
         // === Tab 切换 ===

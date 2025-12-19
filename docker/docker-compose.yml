@@ -1,6 +1,6 @@
 services:
   trend-radar:
-    image: wantcat/trendradar:latest
+    image: wantcat/trendradar:${TREND_RADAR_TAG:?set TREND_RADAR_TAG}
     container_name: trend-radar
     restart: unless-stopped
 
@@ -71,8 +71,36 @@ services:
       - RUN_MODE=${RUN_MODE:-cron}
       - IMMEDIATE_RUN=${IMMEDIATE_RUN:-true}
 
+  trend-radar-viewer:
+    image: wantcat/trendradar-viewer:${TREND_RADAR_VIEWER_TAG:?set TREND_RADAR_VIEWER_TAG}
+    container_name: trend-radar-viewer
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:${VIEWER_PORT:-8090}:${VIEWER_PORT:-8090}"
+
+    volumes:
+      - ../config:/app/config:ro
+      - ../output:/app/output
+
+    environment:
+      - TZ=Asia/Shanghai
+      - PYTHONDONTWRITEBYTECODE=1
+      - RUN_MODE=viewer
+      - VIEWER_HOST=0.0.0.0
+      - VIEWER_PORT=${VIEWER_PORT:-8090}
+      - VIEWER_WORKERS=${VIEWER_WORKERS:-2}
+      - APP_VERSION=${TREND_RADAR_VIEWER_TAG}
+      - CONFIG_REV=1
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/health' % __import__('os').environ.get('VIEWER_PORT','8090'), timeout=5).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
   trend-radar-mcp:
-    image: wantcat/trendradar-mcp:latest
+    image: wantcat/trendradar-mcp:${TREND_RADAR_MCP_TAG:?set TREND_RADAR_MCP_TAG}
     container_name: trend-radar-mcp
     restart: unless-stopped
 

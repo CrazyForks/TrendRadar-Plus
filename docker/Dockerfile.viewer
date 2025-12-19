@@ -1,0 +1,19 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY docker/requirements.viewer.txt ./requirements.viewer.txt
+RUN pip install --no-cache-dir --retries 3 --timeout 60 -r requirements.viewer.txt
+
+COPY trendradar/ ./trendradar/
+COPY mcp_server/ ./mcp_server/
+
+RUN mkdir -p /app/config /app/output
+
+ENV PYTHONUNBUFFERED=1 \
+    CONFIG_PATH=/app/config/config.yaml \
+    FREQUENCY_WORDS_PATH=/app/config/frequency_words.txt
+
+EXPOSE 8090
+
+CMD ["sh", "-c", "python -m uvicorn trendradar.web.server:app --host 0.0.0.0 --port ${VIEWER_PORT:-8090} --workers ${VIEWER_WORKERS:-2}"]

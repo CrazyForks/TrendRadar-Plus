@@ -6,7 +6,10 @@ TrendRadar Web Viewer Server
 """
 
 import asyncio
+import os
+import sqlite3
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -24,6 +27,7 @@ sys.path.insert(0, str(project_root))
 
 from trendradar.web.news_viewer import NewsViewerService
 from mcp_server.services.data_service import DataService
+from mcp_server.services.cache_service import get_cache
 from trendradar.crawler import DataFetcher
 from trendradar.core import load_config
 from trendradar.storage import convert_crawl_results_to_news_data
@@ -58,6 +62,30 @@ _scheduler_task: Optional[asyncio.Task] = None
 _scheduler_running: bool = False
 _last_fetch_time: Optional[datetime] = None
 _fetch_interval_minutes: int = 30  # 默认30分钟获取一次
+
+_online_db_conn: Optional[sqlite3.Connection] = None
+
+
+def _get_online_db_conn() -> sqlite3.Connection:
+    global _online_db_conn
+
+    if _online_db_conn is not None:
+        return _online_db_conn
+
+    output_dir = project_root / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    db_path = output_dir / "online.db"
+
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS online_sessions (session_id TEXT PRIMARY KEY, last_seen INTEGER NOT NULL)"
+    )
+    conn.commit()
+
+    _online_db_conn = conn
+    return conn
 
 
 def get_services():
@@ -203,12 +231,53 @@ def stop_scheduler():
     print("⏹️ 定时任务已停止")
 
 
+async def _render_viewer_page(
+    request: Request,
+    filter: Optional[str],
+    platforms: Optional[str],
+):
+    viewer_service, _ = get_services()
+
+    platform_list = None
+    if platforms:
+        platform_list = [p.strip() for p in platforms.split(",") if p.strip()]
+
+    try:
+        data = viewer_service.get_categorized_news(
+            platforms=platform_list,
+            limit=5000,
+            apply_filter=True,
+            filter_mode=filter,
+        )
+
+        return templates.TemplateResponse(
+            "viewer.html",
+            {
+                "request": request,
+                "data": data,
+                "available_filters": ["strict", "moderate", "off"],
+                "current_filter": filter or data.get("filter_mode", "moderate"),
+            },
+        )
+    except Exception as e:
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <head><title>错误</title></head>
+                <body>
+                    <h1>加载失败</h1>
+                    <p>错误信息: {str(e)}</p>
+                    <p>请确保已经运行过爬虫并有新闻数据。</p>
+                </body>
+            </html>
+            """,
+            status_code=500,
+        )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    """重定向到查看器"""
-    return HTMLResponse(
-        content='<meta http-equiv="refresh" content="0; url=/viewer">'
-    )
+    return await _render_viewer_page(request, filter=None, platforms=None)
 
 
 @app.get("/viewer", response_class=HTMLResponse)
@@ -224,51 +293,13 @@ async def viewer(
         filter: 临时覆盖过滤模式
         platforms: 指定要查看的平台（逗号分隔）
     """
-    viewer_service, _ = get_services()
-    
-    # 解析平台列表
-    platform_list = None
-    if platforms:
-        platform_list = [p.strip() for p in platforms.split(",") if p.strip()]
-    
-    # 获取分类新闻数据
-    try:
-        data = viewer_service.get_categorized_news(
-            platforms=platform_list,
-            limit=500,
-            apply_filter=True,
-            filter_mode=filter
-        )
-        
-        return templates.TemplateResponse(
-            "viewer.html",
-            {
-                "request": request,
-                "data": data,
-                "available_filters": ["strict", "moderate", "off"],
-                "current_filter": filter or data.get("filter_mode", "moderate")
-            }
-        )
-    except Exception as e:
-        return HTMLResponse(
-            content=f"""
-            <html>
-                <head><title>错误</title></head>
-                <body>
-                    <h1>加载失败</h1>
-                    <p>错误信息: {str(e)}</p>
-                    <p>请确保已经运行过爬虫并有新闻数据。</p>
-                </body>
-            </html>
-            """,
-            status_code=500
-        )
+    return await _render_viewer_page(request, filter=filter, platforms=platforms)
 
 
 @app.get("/api/news")
 async def api_news(
     platforms: Optional[str] = Query(None),
-    limit: int = Query(500, ge=1, le=1000),
+    limit: int = Query(5000, ge=1, le=10000),
     filter_mode: Optional[str] = Query(None)
 ):
     """API: 获取分类新闻数据（JSON格式）"""
@@ -286,6 +317,53 @@ async def api_news(
     )
     
     return UnicodeJSONResponse(content=data)
+
+
+@app.post("/api/online/ping")
+async def online_ping(request: Request):
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    session_id = (body.get("session_id") or "").strip()
+    if not session_id:
+        return JSONResponse(content={"detail": "Missing session_id"}, status_code=400)
+
+    now = int(time.time())
+    conn = _get_online_db_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO online_sessions(session_id, last_seen) VALUES (?, ?)",
+        (session_id, now),
+    )
+    conn.execute("DELETE FROM online_sessions WHERE last_seen < ?", (now - 86400,))
+    conn.commit()
+
+    return JSONResponse(content={"ok": True})
+
+
+@app.get("/api/online")
+async def online_stats():
+    now = int(time.time())
+    conn = _get_online_db_conn()
+
+    def count_since(seconds: int) -> int:
+        cur = conn.execute(
+            "SELECT COUNT(*) FROM online_sessions WHERE last_seen >= ?",
+            (now - seconds,),
+        )
+        row = cur.fetchone()
+        return int(row[0] if row else 0)
+
+    stats = {
+        "online_1m": count_since(60),
+        "online_5m": count_since(5 * 60),
+        "online_15m": count_since(15 * 60),
+        "server_time": now,
+    }
+
+    return JSONResponse(content=stats)
 
 
 @app.get("/api/categories")
@@ -331,7 +409,12 @@ async def api_reload_blacklist():
 @app.get("/health")
 async def health():
     """健康检查"""
-    return {"status": "healthy", "service": "TrendRadar News Viewer"}
+    return {
+        "status": "healthy",
+        "service": "TrendRadar News Viewer",
+        "version": os.environ.get("APP_VERSION", "unknown"),
+        "config_rev": os.environ.get("CONFIG_REV", "0"),
+    }
 
 
 # === 定时任务相关 API ===
@@ -376,6 +459,10 @@ async def api_scheduler_status():
 async def api_fetch_now():
     """立即执行一次数据获取"""
     result = await fetch_news_data()
+    try:
+        get_cache().clear()
+    except Exception:
+        pass
     return UnicodeJSONResponse(content=result)
 
 

@@ -34,7 +34,7 @@ PLATFORM_CATEGORIES = {
     "general": {
         "name": "综合新闻",
         "icon": "📰",
-        "news_limit": 5,
+        "news_limit": 10,
         "platforms": [
             "toutiao", "baidu", "thepaper", "ifeng", 
             "cankaoxiaoxi", "zaobao", "tencent-hot"
@@ -52,7 +52,7 @@ PLATFORM_CATEGORIES = {
     "social": {
         "name": "社交娱乐",
         "icon": "🔥",
-        "news_limit": 5,
+        "news_limit": 10,
         "platforms": [
             "weibo", "douyin", "bilibili-hot-search", "tieba", "hupu"
         ]
@@ -68,7 +68,7 @@ PLATFORM_CATEGORIES = {
     "tech_news": {
         "name": "科技资讯",
         "icon": "📱",
-        "news_limit": 8,
+        "news_limit": 10,
         "platforms": [
             "ithome", "36kr-quick", "36kr-renqi", "sspai"
         ]

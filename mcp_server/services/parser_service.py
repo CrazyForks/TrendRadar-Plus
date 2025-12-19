@@ -391,19 +391,24 @@ class ParserService:
             rank_history_map = {}
 
             if news_ids:
-                placeholders = ",".join("?" * len(news_ids))
-                cursor.execute(f"""
-                    SELECT news_item_id, rank FROM rank_history
-                    WHERE news_item_id IN ({placeholders})
-                    ORDER BY news_item_id, crawl_time
-                """, news_ids)
-                
-                for rh_row in cursor.fetchall():
-                    news_id = rh_row['news_item_id']
-                    rank = rh_row['rank']
-                    if news_id not in rank_history_map:
-                        rank_history_map[news_id] = []
-                    rank_history_map[news_id].append(rank)
+                # 分批查询，避免 "too many SQL variables" 错误
+                # SQLite 默认限制 999 个变量
+                batch_size = 500
+                for i in range(0, len(news_ids), batch_size):
+                    batch_ids = news_ids[i:i + batch_size]
+                    placeholders = ",".join("?" * len(batch_ids))
+                    cursor.execute(f"""
+                        SELECT news_item_id, rank FROM rank_history
+                        WHERE news_item_id IN ({placeholders})
+                        ORDER BY news_item_id, crawl_time
+                    """, batch_ids)
+                    
+                    for rh_row in cursor.fetchall():
+                        news_id = rh_row['news_item_id']
+                        rank = rh_row['rank']
+                        if news_id not in rank_history_map:
+                            rank_history_map[news_id] = []
+                        rank_history_map[news_id].append(rank)
 
             for row in rows:
                 news_id = row['id']

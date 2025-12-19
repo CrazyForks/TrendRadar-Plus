@@ -11,6 +11,13 @@ fi
 env >> /etc/environment
 
 case "${RUN_MODE:-cron}" in
+"viewer")
+    echo "🌐 启动 Viewer (FastAPI)..."
+    HOST="${VIEWER_HOST:-0.0.0.0}"
+    PORT="${VIEWER_PORT:-8090}"
+    WORKERS="${VIEWER_WORKERS:-2}"
+    exec /usr/local/bin/python -m uvicorn trendradar.web.server:app --host "$HOST" --port "$PORT" --workers "$WORKERS"
+    ;;
 "once")
     echo "🔄 单次执行"
     exec /usr/local/bin/python -m trendradar

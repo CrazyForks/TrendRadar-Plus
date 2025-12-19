@@ -89,6 +89,8 @@ class DataFetcher:
                 )
                 response.raise_for_status()
 
+                # 强制使用 UTF-8 编码
+                response.encoding = 'utf-8'
                 data_text = response.text
                 data_json = json.loads(data_text)
 
