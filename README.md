@@ -3635,7 +3635,22 @@ flowchart TD
 
 <br>
 
-## 📄 许可证
+## � 致谢 / Credits
+
+本项目基于 [TrendRadar](https://github.com/sansan0/TrendRadar) 进行二次开发。
+
+感谢原作者 [@sansan0](https://github.com/sansan0) 的开源贡献。
+
+### 主要修改内容
+
+- ✨ 新增 News Viewer 分类查看器（按开发者/科技/财经等分类浏览）
+- 🔧 新增平台筛选功能（支持隐藏不想看的平台）
+- 💾 优化已读状态持久化机制（基于内容哈希，24小时自动过期）
+- 📌 新增 Tab 状态记忆功能（刷新后保持当前板块）
+
+<br>
+
+## �📄 许可证
 
 GPL-3.0 License
 

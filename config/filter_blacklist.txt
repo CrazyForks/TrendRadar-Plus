@@ -1,0 +1,67 @@
+# TrendRadar 内容过滤黑名单
+# Content Filter Blacklist
+#
+# 每行一个关键词，以 # 开头的行为注释
+# 匹配时不区分大小写
+# One keyword per line, lines starting with # are comments
+# Matching is case-insensitive
+
+# === 战争/冲突 (War/Conflict) ===
+战争
+俄乌
+乌克兰
+巴以
+加沙
+冲突
+战事
+空袭
+导弹袭击
+军事冲突
+
+# === 明星娱乐 (Celebrity/Entertainment) ===
+明星
+娱乐圈
+绯闻
+恋情
+官宣
+离婚
+分手
+出轨
+热恋
+综艺
+选秀
+粉丝
+爱豆
+饭圈
+CP
+八卦
+
+# === 民间琐事 (Trivial Social Events) ===
+家暴
+婆媳
+邻里纠纷
+小三
+渣男
+渣女
+相亲
+彩礼
+婚闹
+熊孩子
+广场舞
+碰瓷
+医闹
+
+# === 社会负面 (Negative Social News) ===
+# 取消注释以启用这些过滤词
+# Uncomment to enable these filters
+# 凶杀
+# 命案
+# 失踪
+# 跳楼
+# 自杀
+# 车祸
+# 事故
+
+# === 自定义关键词 (Custom Keywords) ===
+# 在下方添加你自己想过滤的关键词
+# Add your own keywords below

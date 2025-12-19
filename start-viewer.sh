@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "╔════════════════════════════════════════╗"
-echo "║  TrendRadar MCP Server (HTTP 模式)    ║"
+echo "║  TrendRadar News Viewer 启动脚本       ║"
 echo "╚════════════════════════════════════════╝"
 echo ""
 
@@ -13,9 +13,18 @@ if [ ! -d ".venv" ]; then
     exit 1
 fi
 
-echo "[模式] HTTP (适合远程访问)"
-echo "[地址] http://localhost:3333/mcp"
+echo "[启动] News Viewer Web 服务器"
+echo "[地址] http://localhost:8080/viewer"
 echo "[提示] 按 Ctrl+C 停止服务"
 echo ""
 
-uv run python -m mcp_server.server --transport http --host 0.0.0.0 --port 3333
+# 检查是否有数据
+if [ ! -d "output" ] || [ -z "$(ls -A output 2>/dev/null)" ]; then
+    echo "⚠️  [警告] 未检测到新闻数据"
+    echo "请先运行爬虫获取新闻数据："
+    echo "  uv run python -m trendradar"
+    echo ""
+fi
+
+# 启动 Web 服务器
+uv run python -m trendradar.web.server --host 0.0.0.0 --port 8080

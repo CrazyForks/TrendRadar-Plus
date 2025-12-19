@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrendRadar - 新闻分类查看器</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --secondary-color: #7c3aed;
+            --cross-platform-color: #f97316;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 5px 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        }
+
+        .main-container { max-width: 1400px; margin: 0 auto; padding: 0 15px; }
+
+        .header-card {
+            background: white;
+            border-radius: 12px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 0;
+            display: inline;
+        }
+        
+        .header-subtitle { display: inline; font-size: 0.75rem; color: #6b7280; margin-left: 10px; }
+
+        .stats-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 8px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 4px 8px;
+            border-radius: 6px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.75rem;
+        }
+
+        .stat-label { opacity: 0.9; }
+        .stat-value { font-weight: 600; }
+
+        /* Tab 导航 */
+        .category-tabs {
+            background: white;
+            border-radius: 10px;
+            padding: 6px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+        }
+
+        .category-tab {
+            flex: 1;
+            min-width: 80px;
+            padding: 6px 10px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        .category-tab:hover { background: #e5e7eb; }
+
+        .category-tab.active {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+        }
+
+        .category-tab-icon { font-size: 1rem; }
+        .category-tab-name { font-size: 0.8rem; font-weight: 600; }
+        .category-tab-count { font-size: 0.65rem; opacity: 0.8; }
+
+        .tab-content-area {
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            min-height: 300px;
+        }
+
+        .tab-pane { display: none; }
+        .tab-pane.active { display: block; }
+
+        .platform-grid {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 10px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+
+        .platform-grid::-webkit-scrollbar { height: 6px; }
+        .platform-grid::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+        .platform-grid::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 3px; }
+        .platform-grid::-webkit-scrollbar-thumb:hover { background: #a1a1a1; }
+
+        .platform-card {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 10px;
+            flex: 0 0 auto;
+            width: 280px;
+            border: 1px solid #e5e7eb;
+            transition: all 0.2s ease;
+        }
+
+        .platform-card:hover {
+            border-color: var(--primary-color);
+            box-shadow: 0 2px 8px rgba(79, 70, 229, 0.15);
+        }
+
+        .platform-name {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .news-list { list-style: none; padding: 0; margin: 0; }
+
+        .news-item {
+            padding: 4px 0;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 0.8rem;
+        }
+
+        .news-item:last-child { border-bottom: none; }
+
+        .news-title {
+            font-size: 0.8rem;
+            color: #1f2937;
+            line-height: 1.4;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .news-item:hover .news-title {
+            white-space: normal;
+            overflow: visible;
+        }
+        
+        .news-item.filtered { display: none !important; }
+        .news-item.read { display: none !important; }
+
+        /* 显示已读模式下的已读新闻 */
+        body.show-read-mode .news-item.read {
+            display: block !important;
+            opacity: 0.5;
+            background: #fef3c7;
+        }
+        body.show-read-mode .news-item.read:hover {
+            opacity: 0.8;
+        }
+
+        /* 已读按钮样式 */
+        .show-read-btn {
+            padding: 4px 10px;
+            background: #fef3c7;
+            color: #92400e;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+        .show-read-btn.active {
+            background: #fbbf24;
+            color: white;
+        }
+        .clear-read-btn {
+            padding: 4px 10px;
+            background: #fee2e2;
+            color: #dc2626;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            margin-left: 6px;
+        }
+        .clear-read-btn:hover {
+            background: #fca5a5;
+        }
+
+        .news-checkbox {
+            width: 14px;
+            height: 14px;
+            margin-right: 6px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .news-item-content {
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .platform-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .mark-all-btn {
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #6b7280;
+            transition: all 0.2s;
+        }
+
+        .mark-all-btn:hover {
+            background: #fee2e2;
+            border-color: #fca5a5;
+            color: #dc2626;
+        }
+
+        .news-title a {
+            color: inherit;
+            text-decoration: none;
+            transition: color 0.2s;
+            pointer-events: none;
+            cursor: text;
+        }
+
+        .news-title {
+            cursor: pointer;
+        }
+
+        .news-title:hover::after {
+            content: ' (双击打开)';
+            font-size: 0.65rem;
+            color: #9ca3af;
+        }
+
+        /* 跨平台高亮 */
+        .news-title.cross-platform {
+            color: var(--cross-platform-color);
+            font-weight: 600;
+            border-left: 3px solid var(--cross-platform-color);
+            padding-left: 8px;
+        }
+
+        .news-title.cross-platform a {
+            color: var(--cross-platform-color);
+        }
+
+        .news-title.cross-platform a:hover {
+            color: #ea580c;
+        }
+
+        .cross-platform-badge {
+            display: inline-flex;
+            background: linear-gradient(135deg, #f97316, #ea580c);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            margin-left: 8px;
+            cursor: help;
+        }
+
+        .news-meta {
+            display: flex;
+            gap: 10px;
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        .rank-badge {
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .rank-top { background: linear-gradient(135deg, #ef4444, #dc2626); }
+
+        /* 过滤面板 */
+        .filter-panel {
+            display: none;
+            margin-top: 8px;
+            padding: 8px;
+            background: #f9fafb;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        .filter-panel.show { display: block; }
+        .filter-input-row { display: flex; gap: 6px; margin-bottom: 6px; }
+        .filter-input {
+            flex: 1;
+            padding: 4px 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+        .filter-add-btn {
+            padding: 4px 10px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .filter-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+        .filter-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: #fee2e2;
+            color: #dc2626;
+            border-radius: 12px;
+            font-size: 0.7rem;
+        }
+        .filter-tag-remove {
+            cursor: pointer;
+            font-weight: bold;
+            opacity: 0.7;
+        }
+        .filter-tag-remove:hover { opacity: 1; }
+        .filter-toggle-btn {
+            padding: 4px 10px;
+            background: #fee2e2;
+            color: #dc2626;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+        .filter-count {
+            font-size: 0.7rem;
+            color: #dc2626;
+            margin-left: 4px;
+        }
+
+        /* 平台筛选按钮和面板 */
+        .platform-filter-btn {
+            padding: 4px 10px;
+            background: #e0e7ff;
+            color: #4338ca;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+        .platform-filter-panel {
+            display: none;
+            margin-top: 8px;
+            padding: 10px;
+            background: #f0f9ff;
+            border-radius: 8px;
+            border: 1px solid #bae6fd;
+        }
+        .platform-filter-panel.show { display: block; }
+        .platform-filter-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+        .platform-filter-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .platform-filter-item:hover {
+            border-color: #4338ca;
+        }
+        .platform-filter-item.hidden {
+            background: #f3f4f6;
+            color: #9ca3af;
+            text-decoration: line-through;
+        }
+        .platform-filter-item input {
+            margin: 0;
+            cursor: pointer;
+        }
+        .platform-filter-actions {
+            display: flex;
+            gap: 6px;
+            padding-top: 8px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .platform-filter-actions button {
+            padding: 4px 10px;
+            font-size: 0.7rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+        }
+        .platform-filter-actions button:hover {
+            background: #f3f4f6;
+        }
+
+        /* 隐藏的平台卡片 */
+        .platform-card.platform-hidden {
+            display: none !important;
+        }
+
+        /* 获取数据按钮 */
+        .fetch-btn {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .fetch-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }
+        .fetch-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .fetch-btn .spinner { display: none; width: 14px; height: 14px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .fetch-btn.loading .spinner { display: inline-block; }
+        .fetch-btn.loading .btn-text { display: none; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* 进度条 */
+        .progress-container {
+            display: none;
+            margin-top: 10px;
+            background: #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+            height: 6px;
+        }
+        .progress-container.show { display: block; }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981, #3b82f6);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 8px;
+        }
+        .progress-bar.indeterminate {
+            width: 30%;
+            animation: indeterminate 1.5s ease-in-out infinite;
+        }
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+        }
+        .fetch-status { font-size: 0.75rem; color: #6b7280; margin-top: 5px; }
+        .fetch-status.success { color: #10b981; }
+        .fetch-status.error { color: #ef4444; }
+
+        @media (max-width: 768px) {
+            .platform-card { width: 240px; }
+            .stats-row { flex-wrap: wrap; }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <!-- Header -->
+        <div class="header-card">
+            <div class="header-title">📰 TrendRadar</div>
+            <span class="header-subtitle">智能分类 · 精准过滤 · 高效阅读</span>
+
+            <div class="stats-row">
+                <button class="fetch-btn" id="fetchBtn" onclick="fetchData()">
+                    <span class="spinner"></span>
+                    <span class="btn-text">🔄 刷新</span>
+                </button>
+                <button class="filter-toggle-btn" onclick="toggleFilterPanel()">
+                    🚫 过滤设置 <span class="filter-count" id="filterCount"></span>
+                </button>
+                <button class="platform-filter-btn" onclick="togglePlatformFilterPanel()">
+                    📱 平台筛选 <span id="hiddenPlatformCount"></span>
+                </button>
+                <button class="show-read-btn" id="showReadBtn" onclick="toggleShowRead()">
+                    👁 已读: <span id="readCount">0</span>
+                </button>
+                <div class="stat-card">
+                    <span class="stat-label">新闻</span>
+                    <span class="stat-value" id="totalNews">{{ data.total_news }}</span>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #f97316, #ea580c);">
+                    <span class="stat-label">🔥 跨平台</span>
+                    <span class="stat-value">{{ data.cross_platform_count }}</span>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #dc2626, #b91c1c);" id="filteredStatCard">
+                    <span class="stat-label">已过滤</span>
+                    <span class="stat-value" id="filteredCount">0</span>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #3b82f6, #2563eb);">
+                    <span class="stat-label">更新</span>
+                    <span class="stat-value">{{ data.updated_at }}</span>
+                </div>
+            </div>
+
+            <!-- 过滤面板 -->
+            <div class="filter-panel" id="filterPanel">
+                <div class="filter-input-row">
+                    <input type="text" class="filter-input" id="filterInput" placeholder="输入关键词，回车添加..." onkeypress="handleFilterKeypress(event)">
+                    <button class="filter-add-btn" onclick="addFilterKeyword()">+ 添加</button>
+                </div>
+                <div class="filter-tags" id="filterTags"></div>
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;">
+                    <button class="clear-read-btn" onclick="clearAllRead()">🗑 清除所有已读记录</button>
+                </div>
+            </div>
+
+            <!-- 平台筛选面板 -->
+            <div class="platform-filter-panel" id="platformFilterPanel">
+                <div style="font-size: 0.8rem; color: #4338ca; margin-bottom: 8px; font-weight: 600;">📱 选择要显示的平台</div>
+                <div class="platform-filter-grid" id="platformFilterGrid"></div>
+                <div class="platform-filter-actions">
+                    <button onclick="selectAllPlatforms()">全选</button>
+                    <button onclick="deselectAllPlatforms()">全不选</button>
+                    <button onclick="resetPlatformFilter()">重置</button>
+                </div>
+            </div>
+
+            <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+                <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="🔍 搜索新闻..." onkeyup="searchNews()" style="flex: 1; font-size: 0.8rem; padding: 4px 8px;">
+            </div>
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="fetch-status" id="fetchStatus"></div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="category-tabs">
+            {% for cat_id, category in data.categories.items() %}
+            <div class="category-tab {% if loop.first %}active{% endif %}" 
+                 data-category="{{ cat_id }}"
+                 onclick="switchTab('{{ cat_id }}')">
+                <div class="category-tab-icon">{{ category.icon }}</div>
+                <div class="category-tab-name">{{ category.name }}</div>
+                <div class="category-tab-count">{{ category.news_count }} 条</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Content -->
+        <div class="tab-content-area">
+            {% for cat_id, category in data.categories.items() %}
+            <div class="tab-pane {% if loop.first %}active{% endif %}" id="tab-{{ cat_id }}">
+                <div class="platform-grid">
+                    {% for platform_id, platform in category.platforms.items() %}
+                    <div class="platform-card" data-platform="{{ platform_id }}">
+                        <div class="platform-header">
+                            <div class="platform-name" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
+                                📱 {{ platform.name }} <span class="badge bg-secondary platform-count">{{ platform.news|length }}</span>
+                            </div>
+                            <button class="mark-all-btn" onclick="markAllInPlatform(this)" title="全部标记为已读">✔ 全部</button>
+                        </div>
+                        <ul class="news-list">
+                            {% for news in platform.news[:category.news_limit] %}
+                            <li class="news-item" data-news-id="{{ news.stable_id }}" data-news-title="{{ news.title }}">
+                                <div class="news-item-content">
+                                    <input type="checkbox" class="news-checkbox" onchange="markAsRead(this)" title="勾选隐藏">
+                                    <div class="news-title {% if news.is_cross_platform %}cross-platform{% endif %}" ondblclick="openLink(this)" data-url="{{ news.url or '' }}">
+                                        {{ news.title }}
+                                        {% if news.is_cross_platform %}
+                                        <span class="cross-platform-badge" title="同时出现在: {{ news.cross_platforms|join(', ') }}">
+                                            🔥 {{ news.cross_platform_count }}
+                                        </span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="news-meta">
+                                    <span class="rank-badge {% if news.rank <= 5 %}rank-top{% endif %}">#{{ news.rank }}</span>
+                                    <span>{{ news.timestamp }}</span>
+                                </div>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        // === 已读状态管理（基于内容哈希 + 自动过期） ===
+        const READ_STORAGE_KEY = 'trendradar_read_news_v2';  // 新版本 key
+        const OLD_STORAGE_KEY = 'trendradar_read_news';      // 旧版本 key
+        const EXPIRE_HOURS = 24;  // 已读记录过期时间（小时）
+        
+        function getReadNews() {
+            const stored = localStorage.getItem(READ_STORAGE_KEY);
+            return stored ? JSON.parse(stored) : {};
+        }
+        
+        function saveReadNews(reads) {
+            localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(reads));
+        }
+        
+        // 迁移旧格式数据（清空）
+        function migrateOldFormat() {
+            if (localStorage.getItem(OLD_STORAGE_KEY)) {
+                localStorage.removeItem(OLD_STORAGE_KEY);
+                console.log('已清除旧版本已读记录');
+            }
+        }
+        
+        // 清理过期的已读记录
+        function cleanupExpiredReads() {
+            const now = Date.now();
+            const reads = getReadNews();
+            const cleaned = {};
+            let removedCount = 0;
+            
+            for (const [id, info] of Object.entries(reads)) {
+                const ageHours = (now - info.readAt) / (1000 * 60 * 60);
+                if (ageHours < EXPIRE_HOURS) {
+                    cleaned[id] = info;
+                } else {
+                    removedCount++;
+                }
+            }
+            
+            if (removedCount > 0) {
+                saveReadNews(cleaned);
+                console.log(`已清理 ${removedCount} 条过期已读记录`);
+            }
+            return removedCount;
+        }
+        
+        function markAsRead(checkbox) {
+            const item = checkbox.closest('.news-item');
+            const newsId = item.dataset.newsId;
+            const newsTitle = item.dataset.newsTitle || '';
+            let reads = getReadNews();
+            
+            if (checkbox.checked) {
+                item.classList.add('read');
+                if (!reads[newsId]) {
+                    reads[newsId] = {
+                        title: newsTitle.substring(0, 50),
+                        readAt: Date.now()
+                    };
+                    saveReadNews(reads);
+                }
+            } else {
+                // 取消勾选，从已读列表移除
+                item.classList.remove('read');
+                delete reads[newsId];
+                saveReadNews(reads);
+            }
+            // 更新计数
+            updatePlatformCount(checkbox.closest('.platform-card'));
+            updateReadCount();
+        }
+        
+        function updateReadCount() {
+            const reads = getReadNews();
+            const countEl = document.getElementById('readCount');
+            if (countEl) countEl.textContent = Object.keys(reads).length;
+        }
+        
+        function updatePlatformCount(card) {
+            const visibleItems = card.querySelectorAll('.news-item:not(.read):not(.filtered)');
+            const countBadge = card.querySelector('.platform-count');
+            if (countBadge) {
+                countBadge.textContent = visibleItems.length;
+            }
+        }
+        
+        function updateAllCounts() {
+            document.querySelectorAll('.platform-card').forEach(card => {
+                updatePlatformCount(card);
+            });
+            // 更新总数
+            const totalVisible = document.querySelectorAll('.news-item:not(.read):not(.filtered)').length;
+            const totalEl = document.getElementById('totalNews');
+            if (totalEl) totalEl.textContent = totalVisible;
+        }
+        
+        function markAllInPlatform(btn) {
+            const card = btn.closest('.platform-card');
+            const checkboxes = card.querySelectorAll('.news-checkbox:not(:checked)');
+            const reads = getReadNews();
+            
+            checkboxes.forEach(cb => {
+                cb.checked = true;
+                const item = cb.closest('.news-item');
+                item.classList.add('read');
+                const newsId = item.dataset.newsId;
+                const newsTitle = item.dataset.newsTitle || '';
+                if (!reads[newsId]) {
+                    reads[newsId] = {
+                        title: newsTitle.substring(0, 50),
+                        readAt: Date.now()
+                    };
+                }
+            });
+            
+            saveReadNews(reads);
+            // 更新计数
+            updatePlatformCount(card);
+            updateAllCounts();
+            updateReadCount();
+        }
+        
+        function openLink(el) {
+            const url = el.dataset.url;
+            if (url) {
+                window.open(url, '_blank');
+            }
+        }
+        
+        function restoreReadState() {
+            const reads = getReadNews();
+            Object.keys(reads).forEach(id => {
+                const item = document.querySelector(`[data-news-id="${id}"]`);
+                if (item) {
+                    item.classList.add('read');
+                    const checkbox = item.querySelector('.news-checkbox');
+                    if (checkbox) checkbox.checked = true;
+                }
+            });
+            // 恢复后更新所有计数
+            updateAllCounts();
+            updateReadCount();
+        }
+        
+        function toggleShowRead() {
+            document.body.classList.toggle('show-read-mode');
+            const btn = document.getElementById('showReadBtn');
+            btn.classList.toggle('active');
+            updateAllCounts();
+        }
+        
+        function clearAllRead() {
+            if (!confirm('确定要清除所有已读记录吗？所有新闻将恢复显示。')) return;
+            
+            // 清除所有已读状态
+            document.querySelectorAll('.news-item.read').forEach(item => {
+                item.classList.remove('read');
+                const checkbox = item.querySelector('.news-checkbox');
+                if (checkbox) checkbox.checked = false;
+            });
+            
+            // 清空 localStorage
+            saveReadNews({});
+            
+            // 更新计数
+            updateAllCounts();
+            updateReadCount();
+            
+            // 关闭显示已读模式
+            document.body.classList.remove('show-read-mode');
+            document.getElementById('showReadBtn').classList.remove('active');
+        }
+        
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 1. 迁移旧格式数据
+            migrateOldFormat();
+            // 2. 清理过期记录
+            cleanupExpiredReads();
+            // 3. 恢复已读状态
+            restoreReadState();
+        });
+
+        // === 过滤功能 ===
+        const FILTER_STORAGE_KEY = 'trendradar_filter_keywords';
+        
+        function getFilterKeywords() {
+            const stored = localStorage.getItem(FILTER_STORAGE_KEY);
+            return stored ? JSON.parse(stored) : [];
+        }
+        
+        function saveFilterKeywords(keywords) {
+            localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(keywords));
+        }
+        
+        function toggleFilterPanel() {
+            document.getElementById('filterPanel').classList.toggle('show');
+        }
+        
+        function handleFilterKeypress(event) {
+            if (event.key === 'Enter') {
+                addFilterKeyword();
+            }
+        }
+        
+        function addFilterKeyword() {
+            const input = document.getElementById('filterInput');
+            const keyword = input.value.trim().toLowerCase();
+            if (!keyword) return;
+            
+            const keywords = getFilterKeywords();
+            if (!keywords.includes(keyword)) {
+                keywords.push(keyword);
+                saveFilterKeywords(keywords);
+                renderFilterTags();
+                applyFilter();
+            }
+            input.value = '';
+        }
+        
+        function removeFilterKeyword(keyword) {
+            let keywords = getFilterKeywords();
+            keywords = keywords.filter(k => k !== keyword);
+            saveFilterKeywords(keywords);
+            renderFilterTags();
+            applyFilter();
+        }
+        
+        function renderFilterTags() {
+            const container = document.getElementById('filterTags');
+            const keywords = getFilterKeywords();
+            
+            container.innerHTML = keywords.map(k => 
+                `<span class="filter-tag">${k}<span class="filter-tag-remove" onclick="removeFilterKeyword('${k}')">×</span></span>`
+            ).join('');
+            
+            // 更新过滤按钮上的数量
+            const countEl = document.getElementById('filterCount');
+            countEl.textContent = keywords.length > 0 ? `(${keywords.length})` : '';
+        }
+        
+        function applyFilter() {
+            const keywords = getFilterKeywords();
+            let filteredCount = 0;
+            
+            document.querySelectorAll('.news-item').forEach(item => {
+                const title = item.textContent.toLowerCase();
+                const shouldFilter = keywords.some(k => title.includes(k));
+                
+                if (shouldFilter) {
+                    item.classList.add('filtered');
+                    filteredCount++;
+                } else {
+                    item.classList.remove('filtered');
+                }
+            });
+            
+            // 更新已过滤数量
+            document.getElementById('filteredCount').textContent = filteredCount;
+        }
+        
+        // 页面加载时初始化过滤
+        document.addEventListener('DOMContentLoaded', function() {
+            renderFilterTags();
+            applyFilter();
+        });
+
+        // === 平台筛选功能 ===
+        const PLATFORM_FILTER_KEY = 'trendradar_hidden_platforms';
+        
+        function getHiddenPlatforms() {
+            const stored = localStorage.getItem(PLATFORM_FILTER_KEY);
+            return stored ? JSON.parse(stored) : [];
+        }
+        
+        function saveHiddenPlatforms(platforms) {
+            localStorage.setItem(PLATFORM_FILTER_KEY, JSON.stringify(platforms));
+        }
+        
+        function togglePlatformFilterPanel() {
+            const panel = document.getElementById('platformFilterPanel');
+            panel.classList.toggle('show');
+            if (panel.classList.contains('show')) {
+                renderPlatformFilterGrid();
+            }
+        }
+        
+        function renderPlatformFilterGrid() {
+            const container = document.getElementById('platformFilterGrid');
+            const hiddenPlatforms = getHiddenPlatforms();
+            const platforms = [];
+            
+            // 收集所有平台
+            document.querySelectorAll('.platform-card').forEach(card => {
+                const platformId = card.dataset.platform;
+                const platformName = card.querySelector('.platform-name').textContent.trim().replace(/📱\s*/, '').split(' ')[0];
+                if (platformId && !platforms.find(p => p.id === platformId)) {
+                    platforms.push({ id: platformId, name: platformName });
+                }
+            });
+            
+            container.innerHTML = platforms.map(p => {
+                const isHidden = hiddenPlatforms.includes(p.id);
+                return `
+                    <label class="platform-filter-item ${isHidden ? 'hidden' : ''}">
+                        <input type="checkbox" ${!isHidden ? 'checked' : ''} onchange="togglePlatformVisibility('${p.id}')">
+                        ${p.name}
+                    </label>
+                `;
+            }).join('');
+            
+            updateHiddenPlatformCount();
+        }
+        
+        function togglePlatformVisibility(platformId) {
+            let hidden = getHiddenPlatforms();
+            if (hidden.includes(platformId)) {
+                hidden = hidden.filter(p => p !== platformId);
+            } else {
+                hidden.push(platformId);
+            }
+            saveHiddenPlatforms(hidden);
+            applyPlatformFilter();
+            renderPlatformFilterGrid();
+        }
+        
+        function selectAllPlatforms() {
+            saveHiddenPlatforms([]);
+            applyPlatformFilter();
+            renderPlatformFilterGrid();
+        }
+        
+        function deselectAllPlatforms() {
+            const allPlatforms = [];
+            document.querySelectorAll('.platform-card').forEach(card => {
+                const platformId = card.dataset.platform;
+                if (platformId && !allPlatforms.includes(platformId)) {
+                    allPlatforms.push(platformId);
+                }
+            });
+            saveHiddenPlatforms(allPlatforms);
+            applyPlatformFilter();
+            renderPlatformFilterGrid();
+        }
+        
+        function resetPlatformFilter() {
+            localStorage.removeItem(PLATFORM_FILTER_KEY);
+            applyPlatformFilter();
+            renderPlatformFilterGrid();
+        }
+        
+        function applyPlatformFilter() {
+            const hidden = getHiddenPlatforms();
+            document.querySelectorAll('.platform-card').forEach(card => {
+                const platformId = card.dataset.platform;
+                if (hidden.includes(platformId)) {
+                    card.classList.add('platform-hidden');
+                } else {
+                    card.classList.remove('platform-hidden');
+                }
+            });
+            updateHiddenPlatformCount();
+        }
+        
+        function updateHiddenPlatformCount() {
+            const hidden = getHiddenPlatforms();
+            const countEl = document.getElementById('hiddenPlatformCount');
+            if (countEl) {
+                countEl.textContent = hidden.length > 0 ? `(隐藏${hidden.length})` : '';
+            }
+        }
+        
+        // 页面加载时初始化平台筛选
+        document.addEventListener('DOMContentLoaded', function() {
+            applyPlatformFilter();
+            restoreActiveTab();
+        });
+
+        // === Tab 切换 ===
+        const TAB_STORAGE_KEY = 'trendradar_active_tab';
+        
+        function switchTab(categoryId) {
+            document.querySelectorAll('.category-tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.category-tab[data-category="${categoryId}"]`).classList.add('active');
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            document.getElementById(`tab-${categoryId}`).classList.add('active');
+            // 保存当前Tab状态
+            localStorage.setItem(TAB_STORAGE_KEY, categoryId);
+        }
+        
+        function restoreActiveTab() {
+            const savedTab = localStorage.getItem(TAB_STORAGE_KEY);
+            if (savedTab) {
+                const tabEl = document.querySelector(`.category-tab[data-category="${savedTab}"]`);
+                if (tabEl) {
+                    switchTab(savedTab);
+                }
+            }
+        }
+
+        // === 搜索 ===
+        function searchNews() {
+            const q = document.getElementById('searchInput').value.toLowerCase();
+            const keywords = getFilterKeywords();
+            
+            document.querySelectorAll('.news-item').forEach(item => {
+                const text = item.textContent.toLowerCase();
+                const matchSearch = !q || text.includes(q);
+                const matchFilter = !keywords.some(k => text.includes(k));
+                
+                if (matchSearch && matchFilter) {
+                    item.classList.remove('filtered');
+                    item.style.display = '';
+                } else if (!matchFilter) {
+                    item.classList.add('filtered');
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+
+        // === 数据获取 ===
+        async function fetchData() {
+            const btn = document.getElementById('fetchBtn');
+            const progress = document.getElementById('progressContainer');
+            const bar = document.getElementById('progressBar');
+            const status = document.getElementById('fetchStatus');
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+            progress.classList.add('show');
+            bar.classList.add('indeterminate');
+            status.className = 'fetch-status';
+            status.textContent = '正在获取数据...';
+
+            try {
+                const response = await fetch('/api/fetch', { method: 'POST' });
+                const result = await response.json();
+
+                bar.classList.remove('indeterminate');
+                
+                if (result.success) {
+                    bar.style.width = '100%';
+                    status.className = 'fetch-status success';
+                    status.textContent = `✅ ${result.platforms} 个平台，${result.news_count} 条新闻`;
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    bar.style.width = '0%';
+                    status.className = 'fetch-status error';
+                    status.textContent = `❌ ${result.error}`;
+                }
+            } catch (error) {
+                bar.classList.remove('indeterminate');
+                bar.style.width = '0%';
+                status.className = 'fetch-status error';
+                status.textContent = `❌ ${error.message}`;
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                setTimeout(() => {
+                    progress.classList.remove('show');
+                    bar.style.width = '0%';
+                }, 5000);
+            }
+        }
+
+        // 5分钟自动刷新
+        setTimeout(() => window.location.reload(), 300000);
+    </script>
+</body>
+</html>

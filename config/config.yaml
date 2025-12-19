@@ -9,6 +9,23 @@ app:
   # 完整时区列表: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
   timezone: "Asia/Shanghai"
 
+# 新闻查看器配置 (Categorized News Viewer)
+viewer:
+  # 过滤模式：strict(严格-任意匹配即过滤) | moderate(适中-2+关键词匹配) | off(关闭过滤)
+  # 注意：前端已实现用户自定义过滤，建议设为 off
+  filter_mode: "off"
+  # 自动刷新
+  auto_refresh: true
+  refresh_interval: 600  # 刷新间隔（秒）
+  # 黑名单配置
+  blacklist:
+    enabled: true
+    keywords_file: "config/filter_blacklist.txt"
+  # 定时数据获取配置
+  auto_fetch: false               # 是否自动启动定时获取任务
+  fetch_interval_minutes: 30      # 获取间隔（分钟），范围 5-1440
+  fetch_on_startup: true          # 服务启动时是否立即获取一次数据
+
 # 存储配置
 storage:
   # 存储后端选择: local / remote / auto
@@ -162,25 +179,72 @@ weight:
 
 # name 可以定义任意名称，只具有显示作用，即使项目运行了几天后，忽然改掉 name 也不会影响代码的正常运行
 platforms:
+  # === 综合新闻媒体类 ===
   - id: "toutiao"
     name: "今日头条"
   - id: "baidu"
     name: "百度热搜"
-  - id: "wallstreetcn-hot"
-    name: "华尔街见闻"
   - id: "thepaper"
     name: "澎湃新闻"
-  - id: "bilibili-hot-search"
-    name: "bilibili 热搜"
-  - id: "cls-hot"
-    name: "财联社热门"
   - id: "ifeng"
     name: "凤凰网"
-  - id: "tieba"
-    name: "贴吧"
+  - id: "cankaoxiaoxi"
+    name: "参考消息"
+  - id: "zaobao"
+    name: "联合早报"
+  - id: "tencent-hot"
+    name: "腾讯新闻"
+
+  # === 财经投资类 ===
+  - id: "wallstreetcn-hot"
+    name: "华尔街见闻 热门"
+  - id: "wallstreetcn-quick"
+    name: "华尔街见闻 快讯"
+  - id: "cls-hot"
+    name: "财联社 热门"
+  - id: "cls-telegraph"
+    name: "财联社 电报"
+  - id: "gelonghui"
+    name: "格隆汇"
+  - id: "xueqiu"
+    name: "雪球"
+  - id: "jin10"
+    name: "金十数据"
+
+  # === 社交/短视频/娱乐类 ===
   - id: "weibo"
     name: "微博"
   - id: "douyin"
     name: "抖音"
+  - id: "bilibili-hot-search"
+    name: "B站热搜"
+  - id: "tieba"
+    name: "贴吧"
   - id: "zhihu"
     name: "知乎"
+  - id: "hupu"
+    name: "虎扑"
+  - id: "douban"
+    name: "豆瓣"
+
+  # === 科技类平台 ===
+  - id: "ithome"
+    name: "IT之家"
+  - id: "juejin"
+    name: "掘金"
+  - id: "github"
+    name: "GitHub"
+  - id: "hackernews"
+    name: "Hacker News"
+  - id: "v2ex"
+    name: "V2EX"
+  - id: "sspai"
+    name: "少数派"
+  - id: "36kr-quick"
+    name: "36氪 快讯"
+  - id: "36kr-renqi"
+    name: "36氪 人气榜"
+  - id: "producthunt"
+    name: "ProductHunt"
+  - id: "freebuf"
+    name: "Freebuf 安全"
