@@ -111,15 +111,14 @@
 
 <div align="center">
 
-| [🚀 快速开始](#-快速开始) | [🤖 AI 智能分析](#-ai-智能分析) | [⚙️ 配置详解](#配置详解) | [📝 更新日志](#-更新日志) | [❓ 答疑与交流](#问题答疑与交流) |
-|:---:|:---:|:---:|:---:|:---:|
-| [🐳 Docker部署](#6-docker-部署) | [🔌 MCP客户端](#-mcp-客户端) | [📚 项目相关](#-项目相关) | [🪄 赞助商](#-赞助商) | |
+| [🚀 快速开始](#-快速开始) | [🤖 AI 智能分析](#-ai-智能分析) | [⚙️ 配置详解](#配置详解) | [📝 更新日志](#-更新日志) |
+|:---:|:---:|:---:|:---:|
+| [🐳 Docker部署](#6-docker-部署) | [🔌 MCP客户端](#-mcp-客户端) | [� 致谢](#-致谢--credits) | |
 
 </div>
 
 - 感谢**耐心反馈 bug** 的贡献者，你们的每一条反馈让项目更加完善😉;  
-- 感谢**为项目点 star** 的观众们，**fork** 你所欲也，**star** 我所欲也，两者得兼😍是对开源精神最好的支持;  
-- 感谢**关注[公众号](#问题答疑与交流)** 的读者们，你们的留言、点赞、分享和推荐等积极互动让内容更有温度😎。  
+- 感谢**为项目点 star** 的观众们，**fork** 你所欲也，**star** 我所欲也，两者得兼😍是对开源精神最好的支持。  
 
 <details>
 <summary>👉 点击展开：<strong>致谢名单</strong> (当前 <strong>🔥73🔥</strong> 位)</summary>
@@ -147,8 +146,6 @@
 ### 观众支持
 
 > 感谢**给予资金支持**的朋友们，你们的慷慨已化身为键盘旁的零食饮料，陪伴着项目的每一次迭代。
->
-> **"一元点赞"已暂停**，如仍想支持作者，可前往[公众号](#问题答疑与交流)文章底部点击"喜欢作者"。
 >
 > 一位可爱猫头像的朋友，不知你从哪个角落翻到了我的收款码，三连了 1.8，心意已收到，感谢厚爱
 
@@ -1639,17 +1636,7 @@ GitHub Actions 环境下，数据存储在 **远程云存储**（支持 S3 兼�
 
    恭喜你完成了 TrendRadar 的配置！现在你可以开始追踪热点资讯了。
 
-   💬 **有更多小伙伴在公众号交流使用心得，期待你的分享~**
-
-   - 想了解更多玩法和高级技巧？
-   - 遇到问题需要快速解答？
-   - 有好的想法想要交流？
-
-   👉 **欢迎关注公众号「硅基茶水间」**，你的点赞和留言都是项目持续更新的动力。
-
-   详细的交流方式，请查看 → [问题答疑与交流](#问题答疑与交流)
-
-6. **想要更智能的分析？试试 AI 增强功能**（可选）
+   6. **想要更智能的分析？试试 AI 增强功能**（可选）
 
    基础配置已经能满足日常使用，但如果你想要：
 
@@ -3113,8 +3100,6 @@ AI 分析功能**不是**直接查询网络实时数据，而是分析你**本�
 
 Cherry Studio 提供 GUI 配置界面，5 分钟快速部署，复杂的部分是一键安装的。
 
-**图文部署教程**：现已更新到我的[公众号](#问题答疑与交流)，回复 "mcp" 即可
-
 **详细部署教程**：[README-Cherry-Studio.md](README-Cherry-Studio.md)
 
 **部署模式说明**：
@@ -3513,99 +3498,10 @@ MCP Inspector 是官方调试工具，用于测试 MCP 连接：
 
 <br>
 
-## ☕问题答疑与交流
-
-> 如果你想支持本项目，可通过微信搜索**腾讯公益**，对里面的**助学**相关的项目随心捐助
->
-> 感谢参与过**一元点赞**的朋友，已收录至顶部**致谢名单**！你们的支持让开源维护更有动力，个人打赏码现已移除。
-
-- **GitHub Issues**：适合针对性强的解答。提问时请提供完整信息（截图、错误日志、系统环境等）。
-- **公众号交流**：适合快速咨询。建议优先在相关文章下的公共留言区交流，如私信，请文明礼貌用语😉
-- 💡 部署成功了？来公众号说说感受吧，你的点赞和留言都是我继续更新的动力~
-
-
-<div align="center">
-
-|公众号关注 |
-|:---:|
-| <img src="_image/weixin.png" width="400" title="硅基茶水间"/> |
-
-</div>
-
-<br>
-
-
-## 🪄 赞助商
-
-> 每天追踪这么多热点，写报告、回复消息是否让手腕疲惫？        
-> 试试「闪电说」AI 语音输入法 —— 用说的，比打字快 4 倍 ⚡ 。从看热点到输出内容，让效率翻倍 👇
-
-<div align="center">
-
-[![Mac下载](https://img.shields.io/badge/Mac-免费下载-FF6B6B?style=for-the-badge&logo=apple&logoColor=white)](https://shandianshuo.cn) [![Windows下载](https://img.shields.io/badge/Windows-免费下载-FF6B6B?style=for-the-badge&logo=lightning&logoColor=white)](https://shandianshuo.cn)
-<a href="https://shandianshuo.cn" target="_blank">
-  <img src="_image/banner-shandianshuo.png" alt="闪电说" width="700"/>
-</a>
-</div>
-
-
-
 ---
 
 <br>
 
-## 📚 项目相关
-
-> **4 篇文章**：
-
-- [可在该文章下方留言，方便项目作者用手机答疑](https://mp.weixin.qq.com/s/KYEPfTPVzZNWFclZh4am_g)
-- [2个月破 1000 star，我的GitHub项目推广实战经验](https://mp.weixin.qq.com/s/jzn0vLiQFX408opcfpPPxQ)
-- [github fork 运行本项目的注意事项 ](https://mp.weixin.qq.com/s/C8evK-U7onG1sTTdwdW2zg)
-- [基于本项目，如何开展公众号或者新闻资讯类文章写作](https://mp.weixin.qq.com/s/8ghyfDAtQZjLrnWTQabYOQ)
-
->**AI 开发**：
-- 如果你有小众需求，完全可以基于我的项目自行开发，零编程基础的也可以试试
-- 我所有的开源项目或多或少都使用了自己写的**AI辅助软件**来提升开发效率，这款工具已开源
-- **核心功能**：迅速筛选项目代码喂给AI，你只需要补充个人需求即可
-- **项目地址**：https://github.com/sansan0/ai-code-context-helper
-
-### 其余项目
-
-> 📍 毛主席足迹地图 - 交互式动态展示1893-1976年完整轨迹。欢迎诸位同志贡献数据
-
-- https://github.com/sansan0/mao-map
-
-> 哔哩哔哩(bilibili)评论区数据可视化分析软件
-
-- https://github.com/sansan0/bilibili-comment-analyzer
-
-
-### 本项目流程图
-
-```mermaid
-flowchart TD
-    A[👤 用户开始] --> B{🚀 选择部署方式}
-    
-    B -->|云端部署| C1[🍴 Fork 项目到 GitHub]
-    B -->|本地部署| C2[🐳 Docker 部署]
-    
-    C1 --> D[⚙️ 配置通知渠道<br/>可同时配置多个]
-    C2 --> D
-    
-    D --> E[选择通知方式：<br/>📱企业微信 💬飞书 🔔钉钉<br/>📟Telegram 📧邮件]
-    
-    E --> F[🔑 填写通知参数<br/>GitHub Secrets 或环境变量]
-    
-    F --> G[📝 配置关键词<br/>config/frequency_words.txt<br/>普通词/必须词+/过滤词!]
-    
-    G --> H[🎯 选择运行模式<br/>config/config.yaml]
-    
-    H --> H1[📋 daily - 当日汇总<br/>定时推送所有匹配新闻]
-    H --> H2[📰 current - 当前榜单<br/>定时推送最新榜单]
-    H --> H3[📈 incremental - 增量监控<br/>仅推送新增内容]
-    
-    H1 --> I[可选：推送时间窗口控制<br/>⏰ 限制推送时间范围]
-    H2 --> I
     H3 --> I
     
     I --> J[✅ 配置完成]
@@ -3631,9 +3527,6 @@ flowchart TD
     style Q fill:#c8e6c9
 ```
 
-[![Star History Chart](https://api.star-history.com/svg?repos=sansan0/TrendRadar&type=Date)](https://www.star-history.com/#sansan0/TrendRadar&Date)
-
-<br>
 
 ## � 致谢 / Credits
 
