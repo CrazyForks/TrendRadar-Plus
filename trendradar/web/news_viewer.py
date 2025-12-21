@@ -217,7 +217,10 @@ class NewsViewerService:
 
         # 按分类组织新闻
         categories = {}
-        new_platform_ids = {"caixin"}
+        viewer_config = self._load_viewer_config() or {}
+        new_badges = viewer_config.get("new_badges", {}) if isinstance(viewer_config, dict) else {}
+        new_platform_ids = set(new_badges.get("platforms", []) or []) if isinstance(new_badges, dict) else set()
+        new_category_ids = set(new_badges.get("categories", []) or []) if isinstance(new_badges, dict) else set()
         for cat_id, cat_info in PLATFORM_CATEGORIES.items():
             categories[cat_id] = {
                 "id": cat_id,
@@ -227,7 +230,7 @@ class NewsViewerService:
                 "platforms": {},
                 "news_count": 0,
                 "filtered_count": 0,
-                "is_new": False,
+                "is_new": cat_id in new_category_ids,
             }
 
         # 其他分类（不在预定义分类中的平台）

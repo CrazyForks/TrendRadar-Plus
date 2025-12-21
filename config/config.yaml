@@ -14,6 +14,12 @@ viewer:
   # 过滤模式：strict(严格-任意匹配即过滤) | moderate(适中-2+关键词匹配) | off(关闭过滤)
   # 注意：前端已实现用户自定义过滤，建议设为 off
   filter_mode: "off"
+
+  new_badges:
+    categories:
+      - "finance"
+    platforms:
+      - "caixin"
   # 自动刷新
   auto_refresh: true
   refresh_interval: 600  # 刷新间隔（秒）
@@ -74,13 +80,13 @@ crawler:
   default_proxy: "http://127.0.0.1:10801"
 
 provider_ingestion:
-  enabled: false
+  enabled: true
   platforms:
     - id: "caixin"
       name: "财新网"
       provider: "caixin"
       config:
-        max_items: 30
+        max_items: 60
         timeout_s: 12
         rss_urls: []
         html_urls:
