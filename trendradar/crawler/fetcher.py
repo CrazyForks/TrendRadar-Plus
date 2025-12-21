@@ -47,6 +47,9 @@ class DataFetcher:
         self.proxy_url = proxy_url
         self.api_url = api_url or self.DEFAULT_API_URL
 
+        self.last_crawl_metrics = []
+        self._last_fetch_meta = {}
+
     def fetch_data(
         self,
         id_info: Union[str, Tuple[str, str]],
@@ -81,6 +84,7 @@ class DataFetcher:
         retries = 0
         while retries <= max_retries:
             try:
+                started_at = time.time()
                 response = requests.get(
                     url,
                     proxies=proxies,
@@ -98,12 +102,32 @@ class DataFetcher:
                 if status not in ["success", "cache"]:
                     raise ValueError(f"响应状态异常: {status}")
 
+                items = data_json.get("items", [])
+                items_count = len(items) if isinstance(items, list) else 0
+                duration_ms = int((time.time() - started_at) * 1000)
+                self._last_fetch_meta[id_value] = {
+                    "status": status,
+                    "duration_ms": duration_ms,
+                    "items_count": items_count,
+                    "error": "",
+                }
+
                 status_info = "最新数据" if status == "success" else "缓存数据"
                 print(f"获取 {id_value} 成功（{status_info}）")
                 return data_text, id_value, alias
 
             except Exception as e:
                 retries += 1
+                started_at_fallback = locals().get("started_at")
+                duration_ms = None
+                if isinstance(started_at_fallback, (int, float)):
+                    duration_ms = int((time.time() - started_at_fallback) * 1000)
+                self._last_fetch_meta[id_value] = {
+                    "status": "error",
+                    "duration_ms": duration_ms,
+                    "items_count": 0,
+                    "error": str(e),
+                }
                 if retries <= max_retries:
                     base_wait = random.uniform(min_retry_wait, max_retry_wait)
                     additional_wait = (retries - 1) * random.uniform(1, 2)
@@ -134,6 +158,7 @@ class DataFetcher:
         results = {}
         id_to_name = {}
         failed_ids = []
+        self.last_crawl_metrics = []
 
         for i, id_info in enumerate(ids_list):
             if isinstance(id_info, tuple):
@@ -144,6 +169,19 @@ class DataFetcher:
 
             id_to_name[id_value] = name
             response, _, _ = self.fetch_data(id_info)
+
+            meta = self._last_fetch_meta.get(id_value, {}) if isinstance(self._last_fetch_meta, dict) else {}
+            self.last_crawl_metrics.append(
+                {
+                    "platform_id": id_value,
+                    "platform_name": name,
+                    "provider": "newsnow",
+                    "status": meta.get("status") or ("success" if response else "error"),
+                    "duration_ms": meta.get("duration_ms"),
+                    "items_count": meta.get("items_count", 0),
+                    "error": meta.get("error", ""),
+                }
+            )
 
             if response:
                 try:

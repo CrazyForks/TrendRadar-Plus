@@ -10,8 +10,10 @@ import os
 import sqlite3
 import sys
 import time
+from collections import deque
 from datetime import datetime, date, timedelta
 from pathlib import Path
+from threading import Lock
 from typing import Optional
 
 from fastapi import FastAPI, Request, Query
@@ -35,6 +37,45 @@ from trendradar.storage import convert_crawl_results_to_news_data
 
 # 创建 FastAPI 应用
 app = FastAPI(title="TrendRadar News Viewer", version="1.0.0")
+
+_FETCH_METRICS_MAX = 5000
+_fetch_metrics = deque(maxlen=_FETCH_METRICS_MAX)
+_fetch_metrics_lock = Lock()
+
+
+def _metrics_file_path() -> Path:
+    return project_root / "output" / "metrics" / "fetch_metrics.jsonl"
+
+
+def _append_fetch_metrics_batch(metrics):
+    if not metrics:
+        return
+
+    try:
+        fp = _metrics_file_path()
+        fp.parent.mkdir(parents=True, exist_ok=True)
+        with fp.open("a", encoding="utf-8") as f:
+            for m in metrics:
+                f.write(json.dumps(m, ensure_ascii=False) + "\n")
+
+        try:
+            lines = fp.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            lines = []
+        if len(lines) > _FETCH_METRICS_MAX:
+            fp.write_text("\n".join(lines[-_FETCH_METRICS_MAX:]) + "\n", encoding="utf-8")
+    except Exception:
+        return
+
+
+def _record_fetch_metrics(metrics):
+    if not metrics:
+        return
+
+    with _fetch_metrics_lock:
+        for m in metrics:
+            _fetch_metrics.append(m)
+
 
 # 自定义 JSONResponse 类，确保中文正确显示
 class UnicodeJSONResponse(Response):
@@ -136,6 +177,10 @@ async def _fetch_tencent_nba_today_matches():
     url = f"https://matchweb.sports.qq.com/kbs/list?columnId=100000&startTime={start_str}&endTime={end_str}"
 
     def _fetch():
+        started_at = time.time()
+        status = "success"
+        err = ""
+        items_count = 0
         resp = requests.get(
             url,
             headers={
@@ -145,8 +190,33 @@ async def _fetch_tencent_nba_today_matches():
             },
             timeout=10,
         )
-        resp.raise_for_status()
-        return resp.json()
+
+        try:
+            resp.raise_for_status()
+            payload = resp.json()
+            try:
+                items_count = len(_extract_tencent_nba_matches(payload))
+            except Exception:
+                items_count = 0
+            return payload
+        except Exception as e:
+            status = "error"
+            err = str(e)
+            raise
+        finally:
+            duration_ms = int((time.time() - started_at) * 1000)
+            metric = {
+                "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "provider": "tencent_nba",
+                "platform_id": "nba-schedule",
+                "platform_name": "NBA赛程",
+                "status": status,
+                "duration_ms": duration_ms,
+                "items_count": items_count,
+                "error": err,
+            }
+            _record_fetch_metrics([metric])
+            _append_fetch_metrics_batch([metric])
 
     payload = await asyncio.to_thread(_fetch)
     return end_str, _extract_tencent_nba_matches(payload)
@@ -350,6 +420,17 @@ async def fetch_news_data():
             # 批量获取数据（阻塞调用，放到线程里执行，避免卡住事件循环）
             crawl_results, id_to_name, failed_ids = fetcher.crawl_websites(platform_tuples)
 
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            batch_metrics = []
+            for m in getattr(fetcher, "last_crawl_metrics", []) or []:
+                if not isinstance(m, dict):
+                    continue
+                mm = dict(m)
+                mm["fetched_at"] = now_str
+                batch_metrics.append(mm)
+            _record_fetch_metrics(batch_metrics)
+            _append_fetch_metrics_batch(batch_metrics)
+
             if not crawl_results:
                 print("⚠️ 未获取到任何数据")
                 return {"success": False, "error": "未获取到数据"}
@@ -404,6 +485,76 @@ async def fetch_news_data():
             return {"success": False, "error": str(e)}
 
     return await asyncio.to_thread(_run_blocking_fetch)
+
+
+@app.get("/api/fetch-metrics")
+async def api_fetch_metrics(
+    limit: int = Query(200, ge=1, le=_FETCH_METRICS_MAX),
+    platform: Optional[str] = Query(None),
+    provider: Optional[str] = Query(None),
+):
+    with _fetch_metrics_lock:
+        items = list(_fetch_metrics)
+
+    if provider:
+        items = [m for m in items if str(m.get("provider") or "").strip() == provider]
+    if platform:
+        items = [m for m in items if str(m.get("platform_id") or "").strip() == platform]
+
+    items = items[-limit:]
+
+    summary = {}
+    for m in items:
+        pid = str(m.get("platform_id") or "").strip() or "unknown"
+        ent = summary.get(pid)
+        if ent is None:
+            ent = {
+                "platform_id": pid,
+                "platform_name": m.get("platform_name") or pid,
+                "provider": m.get("provider") or "",
+                "success": 0,
+                "cache": 0,
+                "error": 0,
+                "avg_duration_ms": None,
+                "avg_items_count": None,
+                "last_status": None,
+                "last_fetched_at": None,
+            }
+            summary[pid] = ent
+
+        st = str(m.get("status") or "").strip()
+        if st in ("success", "cache", "error"):
+            ent[st] += 1
+        else:
+            ent["error"] += 1
+
+        ent["last_status"] = st
+        ent["last_fetched_at"] = m.get("fetched_at")
+
+        dur = m.get("duration_ms")
+        cnt = m.get("items_count")
+        if isinstance(dur, (int, float)):
+            ent.setdefault("_dur_sum", 0)
+            ent.setdefault("_dur_n", 0)
+            ent["_dur_sum"] += float(dur)
+            ent["_dur_n"] += 1
+        if isinstance(cnt, (int, float)):
+            ent.setdefault("_cnt_sum", 0)
+            ent.setdefault("_cnt_n", 0)
+            ent["_cnt_sum"] += float(cnt)
+            ent["_cnt_n"] += 1
+
+    for ent in summary.values():
+        dn = ent.pop("_dur_n", 0)
+        ds = ent.pop("_dur_sum", 0)
+        cn = ent.pop("_cnt_n", 0)
+        cs = ent.pop("_cnt_sum", 0)
+        if dn:
+            ent["avg_duration_ms"] = int(ds / dn)
+        if cn:
+            ent["avg_items_count"] = round(cs / cn, 2)
+
+    return UnicodeJSONResponse(content={"limit": limit, "metrics": items, "summary": list(summary.values())})
 
 
 async def scheduler_loop():

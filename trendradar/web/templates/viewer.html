@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HotNews-热点新闻</title>
+    <title>Hotnews-热点新闻</title>
     <!-- 百度统计 -->
     <script>
     var _hmt = _hmt || [];
@@ -165,6 +165,7 @@
             flex-wrap: nowrap;
             gap: 10px;
             overflow-x: auto;
+            overflow-anchor: none;
             padding-bottom: 8px;
         }
 
@@ -177,10 +178,24 @@
             background: #f9fafb;
             border-radius: 8px;
             padding: 10px;
-            flex: 0 0 auto;
-            width: 280px;
+            flex: 0 0 calc((100% - 30px) / 4);
+            width: calc((100% - 30px) / 4);
             border: 1px solid #e5e7eb;
             transition: all 0.2s ease;
+        }
+
+        @media (max-width: 1024px) {
+            .platform-card {
+                flex: 0 0 calc((100% - 10px) / 2);
+                width: calc((100% - 10px) / 2);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .platform-card {
+                flex: 0 0 100%;
+                width: 100%;
+            }
         }
 
         .platform-card:hover {
@@ -189,7 +204,7 @@
         }
 
         .platform-name {
-            font-size: 0.85rem;
+            font-size: 0.95rem;
             font-weight: 600;
             color: var(--primary-color);
             margin-bottom: 6px;
@@ -202,21 +217,25 @@
         .news-item {
             padding: 4px 0;
             border-bottom: 1px solid #f3f4f6;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             box-sizing: border-box;
-            height: calc(1.4em * 2 + 8px);
+            min-height: calc(1.4em + 8px);
         }
 
         .news-item:last-child { border-bottom: none; }
 
         .news-title {
-            font-size: 0.8rem;
+            font-size: 0.9rem;
             color: #1f2937;
             line-height: 1.4;
             margin-bottom: 0;
-            white-space: nowrap;
+            white-space: normal;
             overflow: hidden;
             text-overflow: ellipsis;
+            display: -webkit-box;
+            line-clamp: 2;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
             flex: 1;
             min-width: 0;
         }
@@ -738,7 +757,7 @@
                             <div class="platform-name" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
                                 📱 {{ platform.name }}
                             </div>
-                            <button class="platform-refresh-btn" type="button" onclick="refreshPlatform(this)" title="仅刷新本平台，换新（10条）">
+                            <button class="platform-refresh-btn" type="button" onclick="refreshPlatform(this)" title="仅刷新本平台，换新（20条）">
                                 <span>换新</span>
                             </button>
                         </div>
@@ -755,10 +774,6 @@
                                         </span>
                                         {% endif %}
                                     </div>
-                                </div>
-                                <div class="news-meta">
-                                    <span class="rank-text">#{{ news.rank }}</span>
-                                    <span>{{ news.timestamp }}</span>
                                 </div>
                             </li>
                             {% endfor %}
@@ -995,13 +1010,20 @@
             // 1. 迁移旧格式数据
             migrateOldFormat();
             // 2. 清理过期记录
-            cleanupExpiredReads();
+            const removed = cleanupExpiredReads();
+            if (removed > 0) {
+                console.log(`已清理 ${removed} 条过期已读记录`);
+            }
             // 3. 恢复已读状态
             restoreReadState();
+            // 4. 初始化已读计数
+            updateReadCount();
+
+            // 5. 初始化分页
             initPaging();
         });
 
-        const CATEGORY_PAGE_SIZE = 10;
+        const CATEGORY_PAGE_SIZE = 20;
 
         function applyPagingToCard(card, offset) {
             const items = Array.from(card.querySelectorAll('.news-item'));
@@ -1318,6 +1340,11 @@
         document.addEventListener('DOMContentLoaded', function() {
             applyPlatformFilter();
             restoreActiveTab();
+            attachPlatformGridScrollPersistence();
+            const tabId = localStorage.getItem(TAB_STORAGE_KEY) || (document.querySelector('.category-tab.active')?.dataset?.category) || null;
+            if (tabId) {
+                restoreActiveTabPlatformGridScroll({ preserveScroll: true, activeTab: tabId });
+            }
         });
 
         // === 在线人数（心跳 + 统计） ===
@@ -1375,6 +1402,8 @@
             document.getElementById(`tab-${categoryId}`).classList.add('active');
             // 保存当前Tab状态
             localStorage.setItem(TAB_STORAGE_KEY, categoryId);
+
+            restoreActiveTabPlatformGridScroll({ preserveScroll: true, activeTab: categoryId });
 
             if (categoryId === 'sports') {
                 markFeatureSeen('sports-nba-schedule');
@@ -1466,6 +1495,77 @@
                 .replaceAll("'", '&#39;');
         }
 
+        const PLATFORM_GRID_SCROLL_STORAGE_KEY = 'trendradar_platform_grid_scroll_v1';
+
+        function getPlatformGridScrollState() {
+            const raw = localStorage.getItem(PLATFORM_GRID_SCROLL_STORAGE_KEY);
+            if (!raw) return {};
+            try {
+                const obj = JSON.parse(raw);
+                return obj && typeof obj === 'object' ? obj : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function setPlatformGridScrollState(state) {
+            try {
+                localStorage.setItem(PLATFORM_GRID_SCROLL_STORAGE_KEY, JSON.stringify(state || {}));
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        function recordPlatformGridScrollForTab(tabId, grid) {
+            if (!tabId || !grid) return;
+
+            const left = grid.scrollLeft || 0;
+            let anchorPlatformId = null;
+            let anchorOffsetX = 0;
+
+            let anchor = null;
+            const cards = grid.querySelectorAll('.platform-card');
+            for (const card of cards) {
+                if ((card.offsetLeft || 0) <= left + 1) {
+                    anchor = card;
+                } else {
+                    break;
+                }
+            }
+            if (anchor?.dataset?.platform) {
+                anchorPlatformId = anchor.dataset.platform;
+                anchorOffsetX = Math.max(0, left - (anchor.offsetLeft || 0));
+            }
+
+            const state = getPlatformGridScrollState();
+            state[tabId] = {
+                left,
+                anchorPlatformId,
+                anchorOffsetX,
+                updatedAt: Date.now(),
+            };
+            setPlatformGridScrollState(state);
+        }
+
+        function attachPlatformGridScrollPersistence() {
+            document.querySelectorAll('.tab-pane .platform-grid').forEach((grid) => {
+                if (grid.dataset.scrollPersistBound === '1') return;
+                grid.dataset.scrollPersistBound = '1';
+
+                let ticking = false;
+                grid.addEventListener('scroll', () => {
+                    if (ticking) return;
+                    ticking = true;
+                    requestAnimationFrame(() => {
+                        ticking = false;
+                        const pane = grid.closest('.tab-pane');
+                        const tabId = pane?.id?.startsWith('tab-') ? pane.id.slice(4) : null;
+                        recordPlatformGridScrollForTab(tabId, grid);
+                    });
+                }, { passive: true });
+            });
+        }
+
         function snapshotViewerState() {
             const activeTab = localStorage.getItem(TAB_STORAGE_KEY) || (document.querySelector('.category-tab.active')?.dataset?.category) || null;
             const pagingOffsets = {};
@@ -1474,13 +1574,78 @@
                 if (!pid) return;
                 pagingOffsets[pid] = parseInt(card.dataset.pageOffset || '0', 10) || 0;
             });
+            const grid = activeTab ? document.querySelector(`#tab-${activeTab} .platform-grid`) : null;
+            const activeTabPlatformGridScrollLeft = grid ? (grid.scrollLeft || 0) : 0;
+            let activeTabPlatformAnchorPlatformId = null;
+            let activeTabPlatformAnchorOffsetX = 0;
+            if (grid) {
+                const left = grid.scrollLeft || 0;
+                let anchor = null;
+                const cards = grid.querySelectorAll('.platform-card');
+                for (const card of cards) {
+                    if ((card.offsetLeft || 0) <= left + 1) {
+                        anchor = card;
+                    } else {
+                        break;
+                    }
+                }
+                if (anchor?.dataset?.platform) {
+                    activeTabPlatformAnchorPlatformId = anchor.dataset.platform;
+                    activeTabPlatformAnchorOffsetX = Math.max(0, left - (anchor.offsetLeft || 0));
+                }
+            }
+            if (activeTab && grid) {
+                recordPlatformGridScrollForTab(activeTab, grid);
+            }
             return {
                 activeTab,
                 pagingOffsets,
+                activeTabPlatformGridScrollLeft,
+                activeTabPlatformAnchorPlatformId,
+                activeTabPlatformAnchorOffsetX,
                 showReadMode: document.body.classList.contains('show-read-mode'),
                 scrollY: window.scrollY || 0,
                 searchText: (document.getElementById('searchInput')?.value || ''),
             };
+        }
+
+        function restoreActiveTabPlatformGridScroll(state) {
+            const tabId = state?.activeTab;
+            if (!state?.preserveScroll || !tabId) return;
+
+            const saved = getPlatformGridScrollState()?.[tabId];
+            const left = Number.isFinite(saved?.left) ? saved.left : (Number.isFinite(state.activeTabPlatformGridScrollLeft) ? state.activeTabPlatformGridScrollLeft : 0);
+            const anchorId = (typeof saved?.anchorPlatformId === 'string' && saved.anchorPlatformId) ? saved.anchorPlatformId : state.activeTabPlatformAnchorPlatformId;
+            const offsetX = Number.isFinite(saved?.anchorOffsetX) ? saved.anchorOffsetX : (Number.isFinite(state.activeTabPlatformAnchorOffsetX) ? state.activeTabPlatformAnchorOffsetX : 0);
+
+            const applyOnce = () => {
+                const grid = document.querySelector(`#tab-${tabId} .platform-grid`);
+                if (!grid) return;
+
+                if (anchorId) {
+                    let anchorCard = null;
+                    grid.querySelectorAll('.platform-card').forEach((card) => {
+                        if (!anchorCard && card.dataset.platform === anchorId) {
+                            anchorCard = card;
+                        }
+                    });
+                    if (anchorCard && anchorCard.offsetParent !== null) {
+                        grid.scrollLeft = (anchorCard.offsetLeft || 0) + offsetX;
+                        return;
+                    }
+                }
+
+                grid.scrollLeft = left;
+            };
+
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    applyOnce();
+                    setTimeout(applyOnce, 50);
+                    setTimeout(applyOnce, 200);
+                    setTimeout(applyOnce, 600);
+                });
+            });
         }
 
         function renderViewerFromData(data, state) {
@@ -1527,10 +1692,6 @@
                                         ${crossBadge}
                                     </div>
                                 </div>
-                                <div class="news-meta">
-                                    <span class="rank-text">#${rank}</span>
-                                    <span>${ts}</span>
-                                </div>
                             </li>`;
                     }).join('');
 
@@ -1538,7 +1699,7 @@
                     <div class="platform-card" data-platform="${escapeHtml(platformId)}">
                         <div class="platform-header">
                             <div class="platform-name" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">📱 ${platformName}</div>
-                            <button class="platform-refresh-btn" type="button" onclick="refreshPlatform(this)" title="仅刷新本平台，换新（10条)"><span>换新</span></button>
+                            <button class="platform-refresh-btn" type="button" onclick="refreshPlatform(this)" title="仅刷新本平台，换新（20条)"><span>换新</span></button>
                         </div>
                         <ul class="news-list">${newsItemsHtml}
                         </ul>
@@ -1598,6 +1759,8 @@
 
             updateAllCounts();
             updateReadCount();
+            restoreActiveTabPlatformGridScroll(state);
+            attachPlatformGridScrollPersistence();
         }
 
         async function refreshViewerData(opts = {}) {
@@ -1605,11 +1768,13 @@
             _ajaxRefreshInFlight = true;
             try {
                 const state = snapshotViewerState();
+                state.preserveScroll = opts.preserveScroll !== false;
                 const response = await fetch('/api/news');
                 const data = await response.json();
                 renderViewerFromData(data, state);
-                if (opts.preserveScroll !== false) {
-                    window.scrollTo({ top: state.scrollY, behavior: 'instant' });
+                if (state.preserveScroll) {
+                    window.scrollTo({ top: state.scrollY, behavior: 'auto' });
+                    restoreActiveTabPlatformGridScroll(state);
                 }
                 _ajaxLastRefreshAt = Date.now();
             } catch (e) {
