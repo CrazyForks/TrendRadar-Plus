@@ -41,6 +41,8 @@ openspec/changes/*/
 !openspec/changes/add-deploy-fast-paths/**
 !openspec/changes/add-fetch-metrics-change-detection/
 !openspec/changes/add-fetch-metrics-change-detection/**
+!openspec/changes/refactor-provider-ingestion/
+!openspec/changes/refactor-provider-ingestion/**
 
 # OpenSpec archive
 openspec/changes/archive/
