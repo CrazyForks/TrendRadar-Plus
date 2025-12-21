@@ -17,9 +17,13 @@
 - 定义 A 热修补的适用范围、步骤与回滚方法。
 - 定义 C 标准发布的目标架构、镜像仓库要求与发布步骤。
 
+- 增加本地验证/开发的快捷路径：对 viewer 的改动提供“一键 build + 重启（force-recreate）+ health check”，避免每次手动重启容器。
+  - 可选：在重启后触发一次 `provider_ingestion`（用于 Caixin/NBA 等 provider 平台的落库验证）。
+
 ## Impact
 - Affected specs:
   - `deployment`（新增“部署路径选择 + 热修补/标准发布”要求）
 - Affected code (expected, after approval):
   - 新增一个热修补脚本（例如 `hotfix-viewer.sh`）或在 `sync-to-server.sh` 中增加 hotfix 子命令。
   - 新增/接入 CI（Gitee/GitHub Actions）与镜像仓库（例如 ACR/Harbor/GitHub Packages/Gitee Packages 等）。
+  - 更新/新增本地脚本：将本地 viewer 的重建与重启纳入单条命令（例如扩展 `docker/local-validate.sh` 或新增 `docker/local-refresh-viewer.sh`）。

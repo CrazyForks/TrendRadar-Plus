@@ -35,3 +35,22 @@
 #### Scenario: CI 构建正确架构
 - **WHEN** 执行标准发布
 - **THEN** CI 必须产出 `linux/amd64` 镜像并推送到服务器可访问仓库
+
+### Requirement: 本地必须提供一键刷新 Viewer（build + force-recreate + health check）
+系统 MUST 提供一个本地一键命令，用于在修改 viewer 相关代码/模板/配置后，自动完成：
+- 重新构建 viewer 镜像
+- 以 `up --force-recreate` 方式重启 viewer（默认行为）
+- 进行 `/health` 健康检查
+
+#### Scenario: 本地刷新无需手动重启
+- **WHEN** 用户执行本地一键刷新命令
+- **THEN** viewer 容器必须被重建或重启（force-recreate）
+- **AND THEN** `/health` 必须通过
+
+#### Scenario: 本地刷新失败输出日志
+- **WHEN** 本地一键刷新命令的 health check 失败
+- **THEN** 命令必须输出 viewer 容器的日志（tail）以便排查
+
+#### Scenario: 可选触发 provider ingestion
+- **WHEN** 用户启用“本地刷新后触发 provider ingestion”的选项
+- **THEN** 系统必须在 viewer 重启后执行一次 provider ingestion 并输出 metrics 摘要

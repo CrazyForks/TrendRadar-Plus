@@ -2,6 +2,11 @@
 - [ ] 1.1 定义“小改动”的判定标准（例如仅改 `viewer.html` / CSS / 静态文件，不涉及依赖与后端逻辑）。
 - [ ] 1.2 明确两种模式：A 热修补 / C 标准发布（CI + 镜像仓库）。
 
+## 1.5 Local Developer Fast Path (Viewer)
+- [ ] 1.5.1 提供本地一键命令：build viewer + up --force-recreate（默认重启）+ health check。
+- [ ] 1.5.2 可选参数：在重启后触发一次 provider ingestion（用于 Caixin/NBA 等 provider 平台落库验证）。
+- [ ] 1.5.3 约束：命令必须显式打印执行内容与 health check 结果，失败时输出 viewer logs（tail）。
+
 ## 2. Mode A: Hotfix (Fast Path)
 - [ ] 2.1 设计热修补命令入口（独立脚本或 `sync-to-server.sh hotfix ...`）。
 - [ ] 2.2 实现热修补：将目标文件同步到服务器，并更新到运行中的 viewer（例如 `docker cp`/bind mount），必要时仅重启 viewer。
@@ -15,3 +20,4 @@
 ## 4. Verification
 - [ ] 4.1 UI 小改动：选择 A 热修补，完成上线时间 < 1 分钟。
 - [ ] 4.2 代码/依赖改动：选择 C 标准发布，服务器可稳定拉取并通过健康检查。
+- [ ] 4.3 本地：执行 1.5 的一键命令后无需手动重启，页面与 /health 均反映最新改动。
