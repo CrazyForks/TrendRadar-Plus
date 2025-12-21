@@ -45,9 +45,9 @@ PLATFORM_CATEGORIES = {
         "icon": "💰",
         "news_limit": 10,
         "platforms": [
+            "caixin",
             "wallstreetcn-hot", "wallstreetcn-quick", "cls-hot",
-            "cls-telegraph", "gelonghui", "xueqiu", "jin10"
-            , "caixin"
+            "cls-telegraph", "gelonghui", "xueqiu", "jin10",
         ]
     },
     "social": {
@@ -217,6 +217,7 @@ class NewsViewerService:
 
         # 按分类组织新闻
         categories = {}
+        new_platform_ids = {"caixin"}
         for cat_id, cat_info in PLATFORM_CATEGORIES.items():
             categories[cat_id] = {
                 "id": cat_id,
@@ -225,7 +226,8 @@ class NewsViewerService:
                 "news_limit": cat_info.get("news_limit", 10),
                 "platforms": {},
                 "news_count": 0,
-                "filtered_count": 0
+                "filtered_count": 0,
+                "is_new": False,
             }
 
         # 其他分类（不在预定义分类中的平台）
@@ -235,7 +237,8 @@ class NewsViewerService:
             "icon": "📋",
             "platforms": {},
             "news_count": 0,
-            "filtered_count": 0
+            "filtered_count": 0,
+            "is_new": False,
         }
 
         # 记录已显示的跨平台新闻标题，用于去重
@@ -258,8 +261,12 @@ class NewsViewerService:
                 categories[cat_id]["platforms"][platform_id] = {
                     "id": platform_id,
                     "name": platform_name,
-                    "news": []
+                    "news": [],
+                    "is_new": platform_id in new_platform_ids,
                 }
+
+            if categories[cat_id]["platforms"][platform_id].get("is_new"):
+                categories[cat_id]["is_new"] = True
 
             # 生成稳定的新闻ID
             stable_id = generate_news_id(platform_id, title)
@@ -289,6 +296,24 @@ class NewsViewerService:
             k: v for k, v in categories.items() 
             if v["news_count"] > 0 or v["filtered_count"] > 0
         }
+
+        # Ensure platforms are ordered by configured category platform list.
+        for cat_id, cat in list(categories.items()):
+            cat_info = PLATFORM_CATEGORIES.get(cat_id)
+            if not cat_info:
+                continue
+            desired = cat_info.get("platforms")
+            if not isinstance(desired, list):
+                continue
+
+            ordered = {}
+            for pid in desired:
+                if pid in cat["platforms"]:
+                    ordered[pid] = cat["platforms"][pid]
+            for pid, pdata in cat["platforms"].items():
+                if pid not in ordered:
+                    ordered[pid] = pdata
+            cat["platforms"] = ordered
 
         # 按预定义顺序排序分类
         def get_order(cat_id):

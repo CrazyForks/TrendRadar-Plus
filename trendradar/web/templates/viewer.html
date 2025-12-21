@@ -758,7 +758,7 @@
                  data-category="{{ cat_id }}"
                  onclick="switchTab('{{ cat_id }}')">
                 <div class="category-tab-icon">{{ category.icon }}</div>
-                <div class="category-tab-name">{{ category.name }}{% if cat_id == 'sports' %}<span class="new-badge" id="newBadgeSportsTab" style="display:none;">NEW</span>{% endif %}</div>
+                <div class="category-tab-name">{{ category.name }}{% if category.is_new or cat_id == 'sports' %}<span class="new-badge">NEW</span>{% endif %}</div>
             </div>
             {% endfor %}
         </div>
@@ -773,6 +773,7 @@
                         <div class="platform-header">
                             <div class="platform-name" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
                                 📱 {{ platform.name }}
+                                {% if platform.is_new %}<span class="new-badge">NEW</span>{% endif %}
                             </div>
                             <button class="platform-refresh-btn" type="button" onclick="refreshPlatform(this)" title="仅刷新本平台，换新（20条）">
                                 <span>换新</span>
