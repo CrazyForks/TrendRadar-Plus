@@ -10,6 +10,7 @@
 """
 
 import json
+import hashlib
 import random
 import time
 from typing import Dict, List, Tuple, Optional, Union
@@ -103,6 +104,19 @@ class DataFetcher:
                     raise ValueError(f"响应状态异常: {status}")
 
                 items = data_json.get("items", [])
+                content_keys = []
+                if isinstance(items, list):
+                    for item in items[:60]:
+                        if not isinstance(item, dict):
+                            continue
+                        title = item.get("title")
+                        if title is None or isinstance(title, float) or not str(title).strip():
+                            continue
+                        title = str(title).strip()
+                        url = str(item.get("url") or "").strip()
+                        mobile_url = str(item.get("mobileUrl") or "").strip()
+                        content_keys.append(f"{title}\u0001{url}\u0001{mobile_url}")
+                content_hash = hashlib.sha1("\n".join(content_keys).encode("utf-8")).hexdigest() if content_keys else ""
                 items_count = len(items) if isinstance(items, list) else 0
                 duration_ms = int((time.time() - started_at) * 1000)
                 self._last_fetch_meta[id_value] = {
@@ -110,6 +124,8 @@ class DataFetcher:
                     "duration_ms": duration_ms,
                     "items_count": items_count,
                     "error": "",
+                    "content_hash": content_hash,
+                    "content_keys": content_keys,
                 }
 
                 status_info = "最新数据" if status == "success" else "缓存数据"
@@ -180,6 +196,8 @@ class DataFetcher:
                     "duration_ms": meta.get("duration_ms"),
                     "items_count": meta.get("items_count", 0),
                     "error": meta.get("error", ""),
+                    "content_hash": meta.get("content_hash", ""),
+                    "_content_keys": meta.get("content_keys") if isinstance(meta.get("content_keys"), list) else None,
                 }
             )
 

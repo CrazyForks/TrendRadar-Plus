@@ -39,6 +39,8 @@ openspec/changes/*/
 !openspec/changes/add-real-sports-and-game-rankings/**
 !openspec/changes/add-deploy-fast-paths/
 !openspec/changes/add-deploy-fast-paths/**
+!openspec/changes/add-fetch-metrics-change-detection/
+!openspec/changes/add-fetch-metrics-change-detection/**
 
 # OpenSpec archive
 openspec/changes/archive/

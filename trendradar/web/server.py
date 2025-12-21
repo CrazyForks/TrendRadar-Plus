@@ -42,6 +42,8 @@ _FETCH_METRICS_MAX = 5000
 _fetch_metrics = deque(maxlen=_FETCH_METRICS_MAX)
 _fetch_metrics_lock = Lock()
 
+_last_platform_content_keys = {}
+
 
 def _metrics_file_path() -> Path:
     return project_root / "output" / "metrics" / "fetch_metrics.jsonl"
@@ -427,6 +429,20 @@ async def fetch_news_data():
                     continue
                 mm = dict(m)
                 mm["fetched_at"] = now_str
+
+                pid = str(mm.get("platform_id") or "").strip()
+                content_keys = mm.pop("_content_keys", None)
+                changed_count = None
+                if pid and isinstance(content_keys, list):
+                    prev = _last_platform_content_keys.get(pid)
+                    if isinstance(prev, list) and prev:
+                        prev_set = set(prev)
+                        changed_count = sum(1 for k in content_keys if k not in prev_set)
+                    else:
+                        changed_count = len(content_keys)
+                    _last_platform_content_keys[pid] = content_keys
+
+                mm["changed_count"] = changed_count
                 batch_metrics.append(mm)
             _record_fetch_metrics(batch_metrics)
             _append_fetch_metrics_batch(batch_metrics)
@@ -517,8 +533,11 @@ async def api_fetch_metrics(
                 "error": 0,
                 "avg_duration_ms": None,
                 "avg_items_count": None,
+                "avg_changed_count": None,
                 "last_status": None,
                 "last_fetched_at": None,
+                "last_changed_count": None,
+                "last_content_hash": None,
             }
             summary[pid] = ent
 
@@ -530,9 +549,12 @@ async def api_fetch_metrics(
 
         ent["last_status"] = st
         ent["last_fetched_at"] = m.get("fetched_at")
+        ent["last_changed_count"] = m.get("changed_count")
+        ent["last_content_hash"] = m.get("content_hash")
 
         dur = m.get("duration_ms")
         cnt = m.get("items_count")
+        chg = m.get("changed_count")
         if isinstance(dur, (int, float)):
             ent.setdefault("_dur_sum", 0)
             ent.setdefault("_dur_n", 0)
@@ -543,16 +565,25 @@ async def api_fetch_metrics(
             ent.setdefault("_cnt_n", 0)
             ent["_cnt_sum"] += float(cnt)
             ent["_cnt_n"] += 1
+        if isinstance(chg, (int, float)):
+            ent.setdefault("_chg_sum", 0)
+            ent.setdefault("_chg_n", 0)
+            ent["_chg_sum"] += float(chg)
+            ent["_chg_n"] += 1
 
     for ent in summary.values():
         dn = ent.pop("_dur_n", 0)
         ds = ent.pop("_dur_sum", 0)
         cn = ent.pop("_cnt_n", 0)
         cs = ent.pop("_cnt_sum", 0)
+        hn = ent.pop("_chg_n", 0)
+        hs = ent.pop("_chg_sum", 0)
         if dn:
             ent["avg_duration_ms"] = int(ds / dn)
         if cn:
             ent["avg_items_count"] = round(cs / cn, 2)
+        if hn:
+            ent["avg_changed_count"] = round(hs / hn, 2)
 
     return UnicodeJSONResponse(content={"limit": limit, "metrics": items, "summary": list(summary.values())})
 
