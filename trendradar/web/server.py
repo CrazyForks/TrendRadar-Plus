@@ -477,6 +477,18 @@ async def fetch_news_data():
             )
             storage.save_news_data(news_data)
 
+            try:
+                from trendradar.providers.runner import build_default_registry, run_provider_ingestion_once
+
+                run_provider_ingestion_once(
+                    registry=build_default_registry(),
+                    project_root=project_root,
+                    config_path=project_root / "config" / "config.yaml",
+                    now=now,
+                )
+            except Exception:
+                pass
+
             global _viewer_service, _data_service, _last_fetch_time
             _last_fetch_time = datetime.now()
 
