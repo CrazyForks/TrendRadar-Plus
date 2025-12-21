@@ -1688,7 +1688,7 @@
                 const platformCards = Object.entries(platforms).map(([platformId, platform]) => {
                     const platformName = escapeHtml(platform?.name || platformId);
                     const news = Array.isArray(platform?.news) ? platform.news : [];
-                    const newsItemsHtml = news.map((n) => {
+                    const newsItemsHtml = news.map((n, idx) => {
                         const stableId = escapeHtml(n?.stable_id || '');
                         const title = escapeHtml(n?.title || '');
                         const url = escapeHtml(n?.url || '');
@@ -1700,8 +1700,7 @@
                         const crossCount = escapeHtml(n?.cross_platform_count ?? '');
                         const crossBadge = isCross ? `<span class="cross-platform-badge" title="同时出现在: ${crossTitle}">🔥 ${crossCount}</span>` : '';
                         const crossClass = isCross ? 'cross-platform' : '';
-                        const displayIndex = (rank !== '' && rank !== 'null' && rank !== 'undefined') ? rank : '';
-                        const indexHtml = `<span class="news-index">${displayIndex || ''}</span>`;
+                        const indexHtml = `<span class="news-index">${String(idx + 1)}</span>`;
                         return `
                             <li class="news-item" data-news-id="${stableId}" data-news-title="${title}">
                                 <div class="news-item-content">
