@@ -92,6 +92,14 @@ provider_ingestion:
         html_urls:
           - "https://www.caixin.com/"
 
+    - id: "nba-schedule"
+      name: "NBA赛程"
+      provider: "tencent_nba"
+      config:
+        days: 7
+        max_items: 30
+        timeout_s: 10
+
 # - daily（当日汇总模式）
 #   • 推送时机：按时推送(默认每小时推送一次)
 #   • 显示内容：当日所有匹配新闻 + 新增新闻区域

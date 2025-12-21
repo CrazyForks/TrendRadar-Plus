@@ -248,6 +248,14 @@ def build_default_registry() -> ProviderRegistry:
         # provider optional; keep registry usable even if import fails
         pass
 
+    try:
+        from .tencent_nba import TencentNbaProvider
+
+        reg.register(TencentNbaProvider())
+    except Exception:
+        # provider optional; keep registry usable even if import fails
+        pass
+
     return reg
 
 

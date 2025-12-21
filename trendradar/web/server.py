@@ -92,242 +92,6 @@ class UnicodeJSONResponse(Response):
             separators=(",", ":"),
         ).encode("utf-8")
 
-
-def _extract_tencent_nba_matches(payload):
-    if payload is None:
-        return []
-
-    matches = []
-    seen = set()
-
-    stack = [payload]
-    while stack:
-        cur = stack.pop()
-        if isinstance(cur, dict):
-            if "mid" in cur and ("leftName" in cur or "rightName" in cur):
-                match_type = str(cur.get("matchType") or "").strip()
-                competition_id = str(cur.get("competitionId") or "").strip()
-
-                left_name = str(cur.get("leftName") or "").strip()
-                right_name = str(cur.get("rightName") or "").strip()
-                left_id = str(cur.get("leftId") or "").strip()
-                right_id = str(cur.get("rightId") or "").strip()
-
-                is_real_game = (
-                    match_type in ("2", "02")
-                    and competition_id == "100000"
-                    and left_name
-                    and right_name
-                    and left_id
-                    and right_id
-                )
-
-                if not is_real_game:
-                    for v in cur.values():
-                        if isinstance(v, (dict, list)):
-                            stack.append(v)
-                    continue
-
-                mid = str(cur.get("mid") or "").strip()
-                if mid and mid not in seen:
-                    seen.add(mid)
-                    left_goal = cur.get("leftGoal")
-                    right_goal = cur.get("rightGoal")
-
-                    is_live_raw = cur.get("isLive")
-                    is_live = False
-                    if isinstance(is_live_raw, bool):
-                        is_live = is_live_raw
-                    elif isinstance(is_live_raw, (int, float)):
-                        is_live = int(is_live_raw) == 1
-                    elif isinstance(is_live_raw, str):
-                        is_live = is_live_raw.strip() in ("1", "true", "True")
-
-                    matches.append(
-                        {
-                            "mid": mid,
-                            "leftName": cur.get("leftName") or "",
-                            "leftBadge": cur.get("leftBadge") or "",
-                            "leftGoal": "" if left_goal is None else str(left_goal),
-                            "rightName": cur.get("rightName") or "",
-                            "rightBadge": cur.get("rightBadge") or "",
-                            "rightGoal": "" if right_goal is None else str(right_goal),
-                            "matchDesc": cur.get("matchDesc") or "",
-                            "startTime": cur.get("startTime") or "",
-                            "isLive": is_live,
-                            "jumpUrl": (cur.get("webUrl") or "").strip() or f"https://kbs.sports.qq.com/m/#/match/{mid}/detail",
-                        }
-                    )
-
-            for v in cur.values():
-                if isinstance(v, (dict, list)):
-                    stack.append(v)
-        elif isinstance(cur, list):
-            for v in cur:
-                if isinstance(v, (dict, list)):
-                    stack.append(v)
-
-    return matches
-
-
-async def _fetch_tencent_nba_today_matches():
-    days = 7
-    end_day = date.today()
-    start_day = end_day - timedelta(days=days - 1)
-    start_str = start_day.strftime("%Y-%m-%d")
-    end_str = end_day.strftime("%Y-%m-%d")
-    url = f"https://matchweb.sports.qq.com/kbs/list?columnId=100000&startTime={start_str}&endTime={end_str}"
-
-    def _fetch():
-        started_at = time.time()
-        status = "success"
-        err = ""
-        items_count = 0
-        resp = requests.get(
-            url,
-            headers={
-                "Referer": "https://kbs.sports.qq.com/",
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "application/json, text/plain, */*",
-            },
-            timeout=10,
-        )
-
-        try:
-            resp.raise_for_status()
-            payload = resp.json()
-            try:
-                items_count = len(_extract_tencent_nba_matches(payload))
-            except Exception:
-                items_count = 0
-            return payload
-        except Exception as e:
-            status = "error"
-            err = str(e)
-            raise
-        finally:
-            duration_ms = int((time.time() - started_at) * 1000)
-            metric = {
-                "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "provider": "tencent_nba",
-                "platform_id": "nba-schedule",
-                "platform_name": "NBA赛程",
-                "status": status,
-                "duration_ms": duration_ms,
-                "items_count": items_count,
-                "error": err,
-            }
-            _record_fetch_metrics([metric])
-            _append_fetch_metrics_batch([metric])
-
-    payload = await asyncio.to_thread(_fetch)
-    return end_str, _extract_tencent_nba_matches(payload)
-
-
-def _build_nba_schedule_news_items(today: str, matches):
-    items = []
-    if not matches:
-        items.append(
-            {
-                "platform": "nba-schedule",
-                "platform_name": "NBA赛程",
-                "title": "今日暂无比赛",
-                "url": "",
-                "timestamp": today,
-                "rank": 1,
-                "stable_id": "nba-schedule-empty",
-            }
-        )
-        return items
-
-    def _parse_start_time(raw: str):
-        s = (raw or "").strip()
-        if not s:
-            return None
-        try:
-            return datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
-        except Exception:
-            return None
-
-    sorted_matches = sorted(
-        matches,
-        key=lambda m: _parse_start_time(m.get("startTime")) or datetime.min,
-        reverse=True,
-    )
-
-    for idx, m in enumerate(sorted_matches, start=1):
-        left = (m.get("leftName") or "").strip()
-        right = (m.get("rightName") or "").strip()
-        lg = (m.get("leftGoal") or "-").strip()
-        rg = (m.get("rightGoal") or "-").strip()
-        desc = (m.get("matchDesc") or "").strip()
-        title = f"{left} vs {right}  {lg}:{rg}  {desc}".strip()
-        mid = (m.get("mid") or "").strip()
-
-        start_dt = _parse_start_time(m.get("startTime"))
-        ts = start_dt.strftime("%m-%d %H:%M") if start_dt else (m.get("startTime") or desc or today)
-        items.append(
-            {
-                "platform": "nba-schedule",
-                "platform_name": "NBA赛程",
-                "title": title,
-                "url": m.get("jumpUrl") or "",
-                "timestamp": ts,
-                "rank": idx,
-                "stable_id": f"nba-schedule-{mid}" if mid else f"nba-schedule-{idx}",
-            }
-        )
-
-    return items
-
-
-def _inject_sports_category(data: dict, nba_news_items):
-    if not isinstance(data, dict):
-        return data
-
-    categories = data.get("categories")
-    if not isinstance(categories, dict):
-        return data
-
-    sports_category = {
-        "id": "sports",
-        "name": "体育",
-        "icon": "🏀",
-        "news_limit": 10,
-        "platforms": {
-            "nba-schedule": {
-                "id": "nba-schedule",
-                "name": "NBA赛程",
-                "news": nba_news_items or [],
-            }
-        },
-        "news_count": len(nba_news_items or []),
-        "filtered_count": 0,
-    }
-
-    ordered = {}
-    inserted = False
-    for key, val in categories.items():
-        ordered[key] = val
-        if key == "developer" and not inserted:
-            ordered["sports"] = sports_category
-            inserted = True
-
-    if not inserted:
-        if "knowledge" in ordered:
-            tmp = {}
-            for key, val in ordered.items():
-                if key == "knowledge":
-                    tmp["sports"] = sports_category
-                    inserted = True
-                tmp[key] = val
-            ordered = tmp
-        else:
-            ordered["sports"] = sports_category
-
-    data["categories"] = ordered
-    return data
-
 # 配置模板目录
 templates_dir = Path(__file__).parent / "templates"
 templates_dir.mkdir(exist_ok=True)
@@ -655,13 +419,6 @@ async def _render_viewer_page(
             filter_mode=filter,
         )
 
-        try:
-            today, matches = await _fetch_tencent_nba_today_matches()
-            nba_items = _build_nba_schedule_news_items(today, matches)
-            data = _inject_sports_category(data, nba_items)
-        except Exception:
-            data = _inject_sports_category(data, _build_nba_schedule_news_items(date.today().strftime("%Y-%m-%d"), []))
-
         return templates.TemplateResponse(
             "viewer.html",
             {
@@ -728,13 +485,6 @@ async def api_news(
         filter_mode=filter_mode
     )
 
-    try:
-        today, matches = await _fetch_tencent_nba_today_matches()
-        nba_items = _build_nba_schedule_news_items(today, matches)
-        data = _inject_sports_category(data, nba_items)
-    except Exception:
-        data = _inject_sports_category(data, _build_nba_schedule_news_items(date.today().strftime("%Y-%m-%d"), []))
-    
     return UnicodeJSONResponse(content=data)
 
 
@@ -760,6 +510,8 @@ async def api_nba_today():
         payload = await asyncio.to_thread(_fetch)
     except Exception as e:
         return JSONResponse(content={"detail": f"Failed to fetch Tencent NBA data: {e}"}, status_code=502)
+
+    from trendradar.providers.tencent_nba import _extract_tencent_nba_matches
 
     games = _extract_tencent_nba_matches(payload)
     return UnicodeJSONResponse(content={"date": today, "games": games})

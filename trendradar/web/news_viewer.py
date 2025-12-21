@@ -81,6 +81,14 @@ PLATFORM_CATEGORIES = {
         "platforms": [
             "juejin", "github", "hackernews", "v2ex", "producthunt", "freebuf"
         ]
+    },
+    "sports": {
+        "name": "体育",
+        "icon": "🏀",
+        "news_limit": 10,
+        "platforms": [
+            "nba-schedule",
+        ],
     }
 }
 
