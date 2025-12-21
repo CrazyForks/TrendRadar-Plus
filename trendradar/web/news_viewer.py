@@ -84,7 +84,7 @@ PLATFORM_CATEGORIES = {
 }
 
 # 分类显示顺序（用户期望的顺序）
-CATEGORY_ORDER = ['developer', 'tech_news', 'finance', 'social', 'general', 'knowledge', 'other']
+CATEGORY_ORDER = ['social', 'general', 'finance', 'tech_news', 'developer', 'sports', 'knowledge', 'other']
 
 
 class NewsViewerService:

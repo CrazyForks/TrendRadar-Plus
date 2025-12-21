@@ -305,20 +305,19 @@ def _inject_sports_category(data: dict, nba_news_items):
         "filtered_count": 0,
     }
 
-    # Insert sports between tech_news and finance (or before finance if tech_news missing)
     ordered = {}
     inserted = False
     for key, val in categories.items():
         ordered[key] = val
-        if key == "tech_news" and not inserted:
+        if key == "developer" and not inserted:
             ordered["sports"] = sports_category
             inserted = True
 
     if not inserted:
-        if "finance" in ordered:
+        if "knowledge" in ordered:
             tmp = {}
             for key, val in ordered.items():
-                if key == "finance":
+                if key == "knowledge":
                     tmp["sports"] = sports_category
                     inserted = True
                 tmp[key] = val
