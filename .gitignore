@@ -43,6 +43,10 @@ openspec/changes/*/
 !openspec/changes/add-fetch-metrics-change-detection/**
 !openspec/changes/refactor-provider-ingestion/
 !openspec/changes/refactor-provider-ingestion/**
+!openspec/changes/update-category-settings-ux/
+!openspec/changes/update-category-settings-ux/**
+!openspec/changes/update-category-settings-modal-simplify/
+!openspec/changes/update-category-settings-modal-simplify/**
 
 # OpenSpec archive
 openspec/changes/archive/
@@ -53,3 +57,10 @@ openspec/changes/archive/
 # Temporary files
 *.tmp
 *.bak
+
+# Node.js / Playwright
+node_modules/
+package-lock.json
+playwright-report/
+test-results/
+.playwright/

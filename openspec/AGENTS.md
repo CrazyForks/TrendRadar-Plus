@@ -52,9 +52,67 @@ Track these steps as TODOs and complete them one by one.
 2. **Read design.md** (if exists) - Review technical decisions
 3. **Read tasks.md** - Get implementation checklist
 4. **Implement tasks sequentially** - Complete in order
-5. **Confirm completion** - Ensure every item in `tasks.md` is finished before updating statuses
-6. **Update checklist** - After all work is done, set every task to `- [x]` so the list reflects reality
-7. **Approval gate** - Do not start implementation until the proposal is reviewed and approved
+5. **Run E2E tests** - After implementation, run `npm test` to verify (see Testing Integration below)
+6. **Fix test failures** - If tests fail, analyze errors and fix code until all tests pass
+7. **Add new tests** - For new features, add corresponding test cases to `tests/e2e/`
+8. **Confirm completion** - Ensure every item in `tasks.md` is finished before updating statuses
+9. **Update checklist** - After all work is done, set every task to `- [x]` so the list reflects reality
+10. **Approval gate** - Do not start implementation until the proposal is reviewed and approved
+
+### Testing Integration (Playwright E2E)
+
+**CRITICAL: Every frontend change MUST pass E2E tests before completion.**
+
+#### Test Workflow
+```bash
+# 1. Ensure Docker container is running
+docker ps | grep trend-radar-viewer || bash docker/local-refresh-viewer.sh
+
+# 2. Run all E2E tests
+npm test
+
+# 3. If tests fail, debug with UI mode
+npm run test:ui
+
+# 4. View test report
+npm run test:report
+```
+
+#### When to Add New Tests
+- **New UI feature** → Add test cases in `tests/e2e/`
+- **Modified UI behavior** → Update existing tests or add new scenarios
+- **Bug fix** → Add regression test to prevent recurrence
+
+#### Test-Driven Fix Loop
+When tests fail:
+1. **Read error message** - Understand what failed
+2. **Check screenshot** - View `test-results/` for failure screenshots
+3. **Identify root cause** - Is it code bug or test selector issue?
+4. **Fix code or test** - Make minimal targeted fix
+5. **Re-run tests** - Verify fix works
+6. **Repeat** - Until all tests pass
+
+#### Adding Tests for New Features
+```typescript
+// tests/e2e/[feature].spec.ts
+import { test, expect } from '@playwright/test';
+import { ViewerPage } from './pages/viewer.page';
+
+test.describe('New Feature', () => {
+  test('should do expected behavior', async ({ page }) => {
+    const viewerPage = new ViewerPage(page);
+    await viewerPage.goto();
+    // Test implementation
+  });
+});
+```
+
+#### Self-Learning from Test Failures
+When encountering test failures:
+1. **Analyze patterns** - Is this a common selector issue? Timing issue?
+2. **Check existing tests** - How do similar tests handle this?
+3. **Update Page Object** - If new UI elements, add to `tests/e2e/pages/viewer.page.ts`
+4. **Document learnings** - Note any non-obvious fixes for future reference
 
 ### Stage 3: Archiving Changes
 After deployment, create separate PR to:

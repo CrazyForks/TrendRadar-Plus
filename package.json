@@ -1,0 +1,22 @@
+{
+  "name": "trendradar-e2e-tests",
+  "version": "1.0.0",
+  "description": "E2E tests for TrendRadar News Viewer",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:headed": "playwright test --headed",
+    "test:report": "playwright show-report",
+    "build:js": "esbuild trendradar/web/static/js/src/index.js --bundle --outfile=trendradar/web/static/js/viewer.bundle.js --format=iife --minify",
+    "build:js:watch": "esbuild trendradar/web/static/js/src/index.js --bundle --outfile=trendradar/web/static/js/viewer.bundle.js --format=iife --watch"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.10.0",
+    "esbuild": "^0.20.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
