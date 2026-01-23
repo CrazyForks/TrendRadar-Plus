@@ -473,6 +473,8 @@ async def create_native_payment(
                 content=body_str
             )
             
+            logger.info(f"WeChat Pay API response: status={resp.status_code}")
+            
             if resp.status_code != 200:
                 error_data = resp.json() if resp.content else {}
                 error_msg = error_data.get("message", f"微信支付错误: {resp.status_code}")
@@ -481,6 +483,8 @@ async def create_native_payment(
             
             result = resp.json()
             code_url = result.get("code_url")
+            
+            logger.info(f"WeChat Pay API result: code_url={code_url}")
             
             if not code_url:
                 return None, "未获取到支付二维码"
