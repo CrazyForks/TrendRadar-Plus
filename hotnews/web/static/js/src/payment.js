@@ -27,23 +27,13 @@ async function loadQRCodeLib() {
         }
         
         const script = document.createElement('script');
-        // Use unpkg as primary, jsdelivr may be blocked in China
-        script.src = 'https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js';
+        // Use local copy to avoid CDN issues in China
+        script.src = '/static/js/lib/qrcode.min.js';
         script.onload = () => {
             QRCode = window.QRCode;
             resolve(QRCode);
         };
-        script.onerror = () => {
-            // Fallback to jsdelivr
-            const fallback = document.createElement('script');
-            fallback.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
-            fallback.onload = () => {
-                QRCode = window.QRCode;
-                resolve(QRCode);
-            };
-            fallback.onerror = reject;
-            document.head.appendChild(fallback);
-        };
+        script.onerror = reject;
         document.head.appendChild(script);
     });
 }
