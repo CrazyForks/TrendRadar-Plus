@@ -35,22 +35,26 @@ def _get_online_db(request: Request):
 
 def _get_current_user_id(request: Request) -> Optional[int]:
     """Get current logged-in user ID from session."""
-    session_data = getattr(request.state, "session", None)
-    if session_data and isinstance(session_data, dict):
-        return session_data.get("user_id")
+    from hotnews.kernel.auth.auth_api import _get_session_token
+    from hotnews.kernel.auth.auth_service import validate_session
+    from hotnews.web.user_db import get_user_db_conn
     
-    # Try cookie-based auth
-    from hotnews.web.user_db import resolve_user_id_by_cookie_token, get_user_db_conn
-    tok = (request.cookies.get("rss_uid") or "").strip()
-    if tok:
-        try:
-            return resolve_user_id_by_cookie_token(
-                conn=get_user_db_conn(request.app.state.project_root),
-                token=tok
-            )
-        except:
-            pass
-    return None
+    session_token = _get_session_token(request)
+    logger.info(f"[Auth] session_token from cookie: {session_token}")
+    
+    if not session_token:
+        logger.info("[Auth] No session token found")
+        return None
+    
+    conn = get_user_db_conn(request.app.state.project_root)
+    is_valid, user_info = validate_session(conn, session_token)
+    
+    logger.info(f"[Auth] validate_session result: is_valid={is_valid}, user_info={user_info}")
+    
+    if not is_valid or not user_info:
+        return None
+    
+    return user_info.get("id")
 
 
 def _require_login(request: Request) -> int:
@@ -289,19 +293,13 @@ async def list_orders(
 @router.get("/usage")
 async def get_usage_history(
     request: Request,
+    user_id: int,
     limit: int = 50
 ):
     """
     Get user's token consumption history.
-    
-    Args:
-        limit: Max number of records to return (default 50, max 100)
-        
-    Returns:
-        records: List of consumption records with title, tokens_used, created_at
-        total_consumption: Sum of all tokens consumed
+    user_id from frontend authState.
     """
-    user_id = _require_login(request)
     conn = _get_online_db(request)
     
     # Ensure token_usage_logs table exists

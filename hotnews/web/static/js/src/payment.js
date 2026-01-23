@@ -493,11 +493,15 @@ async function loadUsageData() {
     const totalEl = document.getElementById('usageTotalValue');
     const historyEl = document.getElementById('rechargeHistoryList');
     
+    // Get user_id from authState
+    const user = authState.getUser();
+    const userId = user?.id;
+    
     try {
         // Fetch balance, usage stats, and orders in parallel
         const [balanceRes, usageRes, ordersRes] = await Promise.all([
             fetch('/api/payment/balance', { credentials: 'include' }),
-            fetch('/api/payment/usage?limit=1', { credentials: 'include' }),
+            fetch(`/api/payment/usage?user_id=${userId}&limit=1`, { credentials: 'include' }),
             fetch('/api/payment/orders?limit=50', { credentials: 'include' })
         ]);
         
