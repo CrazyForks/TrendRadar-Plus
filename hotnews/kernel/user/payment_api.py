@@ -25,7 +25,7 @@ def get_wechat_pay_config() -> Dict[str, str]:
         "mchid": os.environ.get("WECHAT_PAY_MCHID", ""),
         "appid": os.environ.get("WECHAT_PAY_APPID", ""),
         "api_v3_key": os.environ.get("WECHAT_PAY_API_V3_KEY", ""),
-        "pub_key_id": os.environ.get("WECHAT_PAY_PUB_KEY_ID", ""),
+        "cert_serial_no": os.environ.get("WECHAT_PAY_CERT_SERIAL_NO", ""),
         "private_key_path": os.environ.get("WECHAT_PAY_PRIVATE_KEY_PATH", ""),
         "notify_url": os.environ.get("WECHAT_PAY_NOTIFY_URL", ""),
     }
@@ -34,7 +34,7 @@ def get_wechat_pay_config() -> Dict[str, str]:
 def is_wechat_pay_configured() -> bool:
     """Check if WeChat Pay is properly configured."""
     config = get_wechat_pay_config()
-    required = ["mchid", "appid", "api_v3_key", "pub_key_id", "private_key_path"]
+    required = ["mchid", "appid", "api_v3_key", "cert_serial_no", "private_key_path"]
     return all(config.get(k) for k in required)
 
 
@@ -456,7 +456,7 @@ async def create_native_payment(
             f'nonce_str="{nonce_str}",'
             f'signature="{signature_b64}",'
             f'timestamp="{timestamp}",'
-            f'serial_no="{config["pub_key_id"]}"'
+            f'serial_no="{config["cert_serial_no"]}"'
         )
         
         headers = {
