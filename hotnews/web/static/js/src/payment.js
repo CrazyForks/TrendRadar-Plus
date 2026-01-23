@@ -496,9 +496,9 @@ async function loadUsageData() {
     try {
         // Fetch balance, usage stats, and orders in parallel
         const [balanceRes, usageRes, ordersRes] = await Promise.all([
-            fetch('/api/payment/balance'),
-            fetch('/api/payment/usage?limit=1'),  // Just need total_consumption
-            fetch('/api/payment/orders?limit=50')
+            fetch('/api/payment/balance', { credentials: 'include' }),
+            fetch('/api/payment/usage?limit=1', { credentials: 'include' }),
+            fetch('/api/payment/orders?limit=50', { credentials: 'include' })
         ]);
         
         const balanceData = await balanceRes.json();
