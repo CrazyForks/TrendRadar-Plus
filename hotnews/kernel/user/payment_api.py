@@ -266,6 +266,38 @@ def expire_old_orders(conn):
 # Token Balance Management
 # ============================================
 
+# Free quota constants
+FREE_QUOTA_TOKENS = 100000  # 100K tokens
+FREE_QUOTA_VALIDITY_DAYS = 36500  # ~100 years (effectively never expires)
+
+
+def ensure_user_free_quota(conn, user_id: int) -> bool:
+    """
+    Ensure user has free quota record in token_recharge_logs.
+    Creates one if not exists (order_id=0 indicates free quota).
+    Returns True if created, False if already exists.
+    """
+    # Check if user already has free quota (order_id=0)
+    cur = conn.execute(
+        "SELECT id FROM token_recharge_logs WHERE user_id = ? AND order_id = 0",
+        (user_id,)
+    )
+    if cur.fetchone():
+        return False  # Already has free quota
+    
+    # Create free quota record
+    now = int(time.time())
+    expire_at = now + FREE_QUOTA_VALIDITY_DAYS * 24 * 3600
+    
+    conn.execute("""
+        INSERT INTO token_recharge_logs (user_id, order_id, tokens, expire_at, remaining, created_at)
+        VALUES (?, 0, ?, ?, ?, ?)
+    """, (user_id, FREE_QUOTA_TOKENS, expire_at, FREE_QUOTA_TOKENS, now))
+    conn.commit()
+    
+    return True
+
+
 def add_tokens_to_user(
     conn,
     user_id: int,
