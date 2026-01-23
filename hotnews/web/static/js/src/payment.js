@@ -13,6 +13,7 @@ let currentOrderNo = null;
 let pollTimer = null;
 let countdownTimer = null;
 let countdownSeconds = 0;
+let selectedPlanId = null;
 
 // QR code validity period (5 minutes)
 const QR_VALIDITY_SECONDS = 5 * 60;
@@ -97,6 +98,7 @@ export function closePaymentModal() {
     stopPolling();
     stopCountdown();
     currentOrderNo = null;
+    selectedPlanId = null;
 }
 
 /**
