@@ -211,15 +211,39 @@ async def get_balance(request: Request):
     Get user's token balance.
     
     Returns:
-        total: Total available tokens
+        total: Total available tokens (free quota + recharged)
+        free_quota: Remaining free quota from users table
+        recharged: Tokens from recharge records
         details: List of recharge records with remaining tokens
     """
     user_id = _require_login(request)
     conn = _get_online_db(request)
     
-    balance = get_user_token_balance(conn, user_id)
+    # Get recharged tokens from payment system
+    recharge_balance = get_user_token_balance(conn, user_id)
+    recharged_total = recharge_balance.get("total", 0)
     
-    return balance
+    # Get free quota from users table
+    free_quota = 0
+    try:
+        from hotnews.web.user_db import get_user_db_conn
+        user_conn = get_user_db_conn(request.app.state.project_root)
+        cur = user_conn.execute(
+            "SELECT token_balance FROM users WHERE id = ?",
+            (user_id,)
+        )
+        row = cur.fetchone()
+        if row:
+            free_quota = row[0] or 0
+    except Exception:
+        pass
+    
+    return {
+        "total": free_quota + recharged_total,
+        "free_quota": free_quota,
+        "recharged": recharged_total,
+        "details": recharge_balance.get("details", []),
+    }
 
 
 @router.get("/orders")
