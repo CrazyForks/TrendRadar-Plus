@@ -11,7 +11,11 @@ let QRCode = null;
 // State
 let currentOrderNo = null;
 let pollTimer = null;
-let selectedPlanId = null;
+let countdownTimer = null;
+let countdownSeconds = 0;
+
+// QR code validity period (5 minutes)
+const QR_VALIDITY_SECONDS = 5 * 60;
 
 /**
  * Load QRCode library dynamically
@@ -91,8 +95,8 @@ export function closePaymentModal() {
         modal.classList.remove('open');
     }
     stopPolling();
+    stopCountdown();
     currentOrderNo = null;
-    selectedPlanId = null;
 }
 
 /**
@@ -127,12 +131,16 @@ function createPaymentModal() {
                     <div class="payment-qr-container">
                         <div id="paymentQRCode" class="payment-qr-code"></div>
                         <div class="payment-qr-hint">请使用微信扫码支付</div>
+                        <div id="paymentCountdown" class="payment-countdown">有效期 <span id="countdownTime">5:00</span></div>
                     </div>
                     <div class="payment-order-info">
                         <div class="payment-order-amount">¥<span id="paymentOrderAmount">--</span></div>
                         <div class="payment-order-tokens"><span id="paymentOrderTokens">--</span> Tokens</div>
                     </div>
                     <div id="paymentStatus" class="payment-status">等待支付...</div>
+                    <div class="payment-refresh-hint">
+                        已支付？<a href="javascript:void(0)" onclick="manualCheckPayment()">刷新状态</a>
+                    </div>
                 </div>
                 
                 <!-- Success Section (hidden initially) -->
@@ -278,8 +286,9 @@ async function selectPlan(planId) {
         // Update status
         statusEl.textContent = '等待支付...';
         
-        // Start polling
+        // Start polling and countdown
         startPolling();
+        startCountdown();
         
     } catch (err) {
         console.error('Create order error:', err);
@@ -318,6 +327,7 @@ async function generateQRCode(codeUrl) {
  */
 function showPlansSection() {
     stopPolling();
+    stopCountdown();
     currentOrderNo = null;
     
     document.getElementById('paymentPlansSection').style.display = 'block';
@@ -379,9 +389,97 @@ function stopPolling() {
 }
 
 /**
+ * Start countdown timer
+ */
+function startCountdown() {
+    stopCountdown();
+    countdownSeconds = QR_VALIDITY_SECONDS;
+    updateCountdownDisplay();
+    
+    countdownTimer = setInterval(() => {
+        countdownSeconds--;
+        updateCountdownDisplay();
+        
+        if (countdownSeconds <= 0) {
+            stopCountdown();
+            showQRExpired();
+        }
+    }, 1000);
+}
+
+/**
+ * Stop countdown timer
+ */
+function stopCountdown() {
+    if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+    }
+}
+
+/**
+ * Update countdown display
+ */
+function updateCountdownDisplay() {
+    const el = document.getElementById('countdownTime');
+    if (!el) return;
+    
+    const minutes = Math.floor(countdownSeconds / 60);
+    const seconds = countdownSeconds % 60;
+    el.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    // Change color when less than 1 minute
+    const container = document.getElementById('paymentCountdown');
+    if (container) {
+        container.classList.toggle('warning', countdownSeconds <= 60);
+    }
+}
+
+/**
+ * Show QR expired state
+ */
+function showQRExpired() {
+    stopPolling();
+    
+    const statusEl = document.getElementById('paymentStatus');
+    if (statusEl) {
+        statusEl.textContent = '二维码已过期';
+        statusEl.className = 'payment-status error';
+    }
+    
+    // Show refresh button
+    const qrContainer = document.getElementById('paymentQRCode');
+    if (qrContainer) {
+        qrContainer.innerHTML = `
+            <div class="payment-qr-expired">
+                <div class="payment-qr-expired-icon">⏰</div>
+                <div class="payment-qr-expired-text">二维码已过期</div>
+                <button class="payment-qr-refresh-btn" onclick="refreshQRCode()">刷新二维码</button>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Refresh QR code (re-create order)
+ */
+async function refreshQRCode() {
+    // Get the selected plan from the card
+    const selectedCard = document.querySelector('.payment-plan-card.selected');
+    if (!selectedCard) {
+        showPlansSection();
+        return;
+    }
+    
+    const planId = parseInt(selectedCard.dataset.planId);
+    await selectPlan(planId);
+}
+
+/**
  * Show success section
  */
 function showSuccess(tokens) {
+    stopCountdown();
     document.getElementById('paymentPlansSection').style.display = 'none';
     document.getElementById('paymentQRSection').style.display = 'none';
     document.getElementById('paymentSuccessSection').style.display = 'flex';
@@ -389,6 +487,38 @@ function showSuccess(tokens) {
     
     // Refresh balance display elsewhere if needed
     window.dispatchEvent(new CustomEvent('payment-success', { detail: { tokens } }));
+}
+
+/**
+ * Manual check payment status (用户点击"刷新状态")
+ */
+async function manualCheckPayment() {
+    if (!currentOrderNo) return;
+    
+    const statusEl = document.getElementById('paymentStatus');
+    statusEl.textContent = '正在查询...';
+    statusEl.className = 'payment-status';
+    
+    try {
+        const res = await fetch(`/api/payment/status?order_no=${currentOrderNo}`);
+        const data = await res.json();
+        
+        if (data.status === 'paid') {
+            stopPolling();
+            showSuccess(data.tokens_added || data.tokens);
+        } else if (data.status === 'expired') {
+            stopPolling();
+            statusEl.textContent = '订单已过期，请重新下单';
+            statusEl.className = 'payment-status error';
+        } else {
+            statusEl.textContent = '尚未支付，请完成支付后再试';
+            statusEl.className = 'payment-status';
+        }
+    } catch (err) {
+        console.error('Manual check error:', err);
+        statusEl.textContent = '查询失败，请稍后再试';
+        statusEl.className = 'payment-status error';
+    }
 }
 
 // Expose to window for onclick handlers
@@ -400,6 +530,8 @@ window.loadPlans = loadPlans;
 window.openUsageModal = openUsageModal;
 window.closeUsageModal = closeUsageModal;
 window.refreshUsageData = refreshUsageData;
+window.manualCheckPayment = manualCheckPayment;
+window.refreshQRCode = refreshQRCode;
 
 export { formatTokens, openUsageModal, closeUsageModal };
 
