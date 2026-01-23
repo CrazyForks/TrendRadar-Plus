@@ -27,7 +27,7 @@ async function loadQRCodeLib() {
         }
         
         const script = document.createElement('script');
-        // Use local copy to avoid CDN issues in China
+        // Use local qrcodejs library
         script.src = '/static/js/lib/qrcode.min.js';
         script.onload = () => {
             QRCode = window.QRCode;
@@ -298,17 +298,15 @@ async function generateQRCode(codeUrl) {
     try {
         await loadQRCodeLib();
         
-        const canvas = document.createElement('canvas');
-        await QRCode.toCanvas(canvas, codeUrl, {
+        // qrcodejs API - creates QR code directly in container
+        new QRCode(container, {
+            text: codeUrl,
             width: 200,
-            margin: 2,
-            color: {
-                dark: '#1d1d1f',
-                light: '#ffffff'
-            }
+            height: 200,
+            colorDark: '#1d1d1f',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.M
         });
-        
-        container.appendChild(canvas);
     } catch (err) {
         console.error('QR code error:', err);
         container.innerHTML = '<div class="payment-qr-error">二维码生成失败</div>';
