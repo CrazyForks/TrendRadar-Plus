@@ -102,6 +102,7 @@ async def create_payment(
     result, error = await create_native_payment(plan_id, user_id, conn)
     
     if error:
+        logger.error(f"[Payment] Create payment failed for user {user_id}, plan {plan_id}: {error}")
         raise HTTPException(status_code=400, detail=error)
     
     return result
