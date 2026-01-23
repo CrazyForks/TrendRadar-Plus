@@ -332,7 +332,7 @@ function startPolling() {
     stopPolling();
     
     let attempts = 0;
-    const maxAttempts = 180; // 30 minutes at 10s intervals
+    const maxAttempts = 600; // 10 minutes at 1s intervals
     
     pollTimer = setInterval(async () => {
         if (!currentOrderNo) {
@@ -365,7 +365,7 @@ function startPolling() {
         } catch (err) {
             console.error('Poll status error:', err);
         }
-    }, 10000); // Poll every 10 seconds
+    }, 1000); // Poll every 1 second for faster feedback
 }
 
 /**
