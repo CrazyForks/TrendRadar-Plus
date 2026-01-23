@@ -260,6 +260,18 @@ async def list_orders(
     
     orders = []
     for row in cur.fetchall():
+        # Convert Unix timestamps to ISO format
+        paid_at = row[6]
+        created_at = row[7]
+        
+        if isinstance(paid_at, int) and paid_at > 0:
+            from datetime import datetime
+            paid_at = datetime.fromtimestamp(paid_at).isoformat()
+        
+        if isinstance(created_at, int):
+            from datetime import datetime
+            created_at = datetime.fromtimestamp(created_at).isoformat()
+        
         orders.append({
             "id": row[0],
             "order_no": row[1],
@@ -267,8 +279,77 @@ async def list_orders(
             "amount": row[3] / 100,
             "tokens": row[4],
             "status": row[5],
-            "paid_at": row[6],
-            "created_at": row[7],
+            "paid_at": paid_at,
+            "created_at": created_at,
         })
     
     return {"orders": orders}
+
+
+@router.get("/usage")
+async def get_usage_history(
+    request: Request,
+    limit: int = 50
+):
+    """
+    Get user's token consumption history.
+    
+    Args:
+        limit: Max number of records to return (default 50, max 100)
+        
+    Returns:
+        records: List of consumption records with title, tokens_used, created_at
+        total_consumption: Sum of all tokens consumed
+    """
+    user_id = _require_login(request)
+    conn = _get_online_db(request)
+    
+    # Ensure token_usage_logs table exists
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS token_usage_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            news_id TEXT,
+            title TEXT,
+            tokens_used INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_token_usage_user ON token_usage_logs(user_id)")
+    
+    # Query token_usage_logs table for consumption history
+    cur = conn.execute("""
+        SELECT news_id, title, tokens_used, created_at
+        FROM token_usage_logs
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+    """, (user_id, min(limit, 100)))
+    
+    records = []
+    for row in cur.fetchall():
+        # Convert Unix timestamp to ISO format for frontend
+        created_at = row[3]
+        if isinstance(created_at, int):
+            from datetime import datetime
+            created_at = datetime.fromtimestamp(created_at).isoformat()
+        
+        records.append({
+            "news_id": row[0],
+            "title": row[1],
+            "tokens_used": row[2],
+            "created_at": created_at,
+        })
+    
+    # Get total consumption
+    cur = conn.execute("""
+        SELECT COALESCE(SUM(tokens_used), 0)
+        FROM token_usage_logs
+        WHERE user_id = ?
+    """, (user_id,))
+    total_consumption = cur.fetchone()[0] or 0
+    
+    return {
+        "records": records,
+        "total_consumption": total_consumption
+    }

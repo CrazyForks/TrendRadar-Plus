@@ -397,5 +397,324 @@ window.closePaymentModal = closePaymentModal;
 window.selectPlan = selectPlan;
 window.showPlansSection = showPlansSection;
 window.loadPlans = loadPlans;
+window.openUsageModal = openUsageModal;
+window.closeUsageModal = closeUsageModal;
 
-export { formatTokens };
+export { formatTokens, openUsageModal, closeUsageModal };
+
+/**
+ * Create and show usage modal (账户明细 - 方案C：只显示统计+充值记录)
+ */
+async function openUsageModal() {
+    // Check login
+    const user = authState.getUser();
+    if (!user) {
+        window.Toast?.show('请先登录', 'error');
+        window.openLoginModal?.();
+        return;
+    }
+    
+    // Create modal if not exists
+    let modal = document.getElementById('usageModal');
+    if (!modal) {
+        modal = createUsageModal();
+        document.body.appendChild(modal);
+    }
+    
+    // Show modal
+    modal.classList.add('open');
+    
+    // Load data
+    await loadUsageData();
+}
+
+/**
+ * Close usage modal
+ */
+function closeUsageModal() {
+    const modal = document.getElementById('usageModal');
+    if (modal) {
+        modal.classList.remove('open');
+    }
+}
+
+/**
+ * Create usage modal HTML
+ */
+function createUsageModal() {
+    const modal = document.createElement('div');
+    modal.id = 'usageModal';
+    modal.className = 'usage-modal';
+    
+    modal.innerHTML = `
+        <div class="usage-modal-backdrop" onclick="closeUsageModal()"></div>
+        <div class="usage-modal-content">
+            <button class="usage-modal-close" onclick="closeUsageModal()">×</button>
+            
+            <div class="usage-modal-header">
+                <h2>📊 账户明细</h2>
+            </div>
+            
+            <div class="usage-modal-body">
+                <!-- Stats Section -->
+                <div class="usage-stats-section">
+                    <div class="usage-stat-card">
+                        <div class="usage-stat-label">当前余额</div>
+                        <div class="usage-stat-value" id="usageBalanceValue">--</div>
+                    </div>
+                    <div class="usage-stat-card consumption">
+                        <div class="usage-stat-label">累计消费</div>
+                        <div class="usage-stat-value" id="usageTotalValue">--</div>
+                    </div>
+                </div>
+                
+                <!-- Recharge History -->
+                <div class="usage-section">
+                    <div class="usage-section-title">充值记录</div>
+                    <div id="rechargeHistoryList" class="usage-history-list">
+                        <div class="usage-loading">加载中...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add styles
+    ensureUsageModalStyles();
+    
+    return modal;
+}
+
+/**
+ * Load usage data (balance + total consumption + recharge history)
+ */
+async function loadUsageData() {
+    const balanceEl = document.getElementById('usageBalanceValue');
+    const totalEl = document.getElementById('usageTotalValue');
+    const historyEl = document.getElementById('rechargeHistoryList');
+    
+    try {
+        // Fetch balance, usage stats, and orders in parallel
+        const [balanceRes, usageRes, ordersRes] = await Promise.all([
+            fetch('/api/payment/balance'),
+            fetch('/api/payment/usage?limit=1'),  // Just need total_consumption
+            fetch('/api/payment/orders?limit=50')
+        ]);
+        
+        const balanceData = await balanceRes.json();
+        const usageData = await usageRes.json();
+        const ordersData = await ordersRes.json();
+        
+        // Update balance
+        if (balanceEl) {
+            balanceEl.textContent = formatTokens(balanceData.total || 0);
+        }
+        
+        // Update total consumption
+        if (totalEl) {
+            totalEl.textContent = formatTokens(usageData.total_consumption || 0);
+        }
+        
+        // Render recharge history (only paid orders)
+        const orders = (ordersData.orders || []).filter(o => o.status === 'paid');
+        if (orders.length === 0) {
+            historyEl.innerHTML = '<div class="usage-empty">暂无充值记录</div>';
+            return;
+        }
+        
+        historyEl.innerHTML = orders.map(order => renderRechargeRecord(order)).join('');
+        
+    } catch (err) {
+        console.error('Load usage data error:', err);
+        historyEl.innerHTML = `
+            <div class="usage-error">
+                <div>加载失败</div>
+                <button onclick="loadUsageData()">重试</button>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Render a single recharge record
+ */
+function renderRechargeRecord(order) {
+    const date = new Date(order.paid_at || order.created_at);
+    const dateStr = date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+    const timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    
+    return `
+        <div class="usage-record">
+            <div class="usage-record-left">
+                <div class="usage-record-title">充值 ¥${order.amount}</div>
+                <div class="usage-record-time">${dateStr} ${timeStr}</div>
+            </div>
+            <div class="usage-record-tokens recharge">+${formatTokens(order.tokens)}</div>
+        </div>
+    `;
+}
+
+/**
+ * Ensure usage modal styles are added
+ */
+function ensureUsageModalStyles() {
+    if (document.getElementById('usage-modal-styles')) return;
+    
+    const style = document.createElement('style');
+    style.id = 'usage-modal-styles';
+    style.textContent = `
+        .usage-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 10000;
+        }
+        .usage-modal.open {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .usage-modal-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+        }
+        .usage-modal-content {
+            position: relative;
+            background: #1e293b;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 420px;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        .usage-modal-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 4px 8px;
+            line-height: 1;
+            z-index: 1;
+        }
+        .usage-modal-close:hover {
+            color: #f1f5f9;
+        }
+        .usage-modal-header {
+            padding: 20px 24px 16px;
+            border-bottom: 1px solid #334155;
+        }
+        .usage-modal-header h2 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+        .usage-modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+        }
+        /* Stats Section */
+        .usage-stats-section {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .usage-stat-card {
+            flex: 1;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 12px;
+            padding: 20px 16px;
+            text-align: center;
+        }
+        .usage-stat-card.consumption {
+            background: linear-gradient(135deg, #f97316, #ef4444);
+        }
+        .usage-stat-label {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 8px;
+        }
+        .usage-stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: white;
+        }
+        /* Section */
+        .usage-section {
+            margin-top: 8px;
+        }
+        .usage-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: 12px;
+        }
+        .usage-history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .usage-record {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 14px;
+            background: #0f172a;
+            border-radius: 8px;
+        }
+        .usage-record-left {
+            flex: 1;
+            min-width: 0;
+        }
+        .usage-record-title {
+            font-size: 14px;
+            color: #f1f5f9;
+        }
+        .usage-record-time {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+        .usage-record-tokens {
+            font-size: 15px;
+            font-weight: 600;
+            margin-left: 12px;
+            white-space: nowrap;
+        }
+        .usage-record-tokens.recharge {
+            color: #4ade80;
+        }
+        .usage-loading, .usage-empty, .usage-error {
+            text-align: center;
+            padding: 32px 24px;
+            color: #64748b;
+            font-size: 14px;
+        }
+        .usage-error button {
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+    `;
+    document.head.appendChild(style);
+}

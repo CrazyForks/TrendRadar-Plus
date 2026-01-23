@@ -97,6 +97,20 @@ def init_payment_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_token_recharge_user ON token_recharge_logs(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_token_recharge_expire ON token_recharge_logs(expire_at)")
     
+    # Token usage logs table (consumption history)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS token_usage_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            news_id TEXT,
+            title TEXT,
+            tokens_used INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_token_usage_user ON token_usage_logs(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_token_usage_created ON token_usage_logs(created_at DESC)")
+    
     # Insert default plans if not exist
     cur = conn.execute("SELECT COUNT(*) FROM recharge_plans")
     if cur.fetchone()[0] == 0:
@@ -356,10 +370,11 @@ def get_user_token_balance(conn, user_id: int) -> Dict[str, Any]:
     }
 
 
-def consume_tokens(conn, user_id: int, amount: int) -> bool:
+def consume_tokens(conn, user_id: int, amount: int, news_id: str = None, title: str = None) -> bool:
     """
     Consume tokens from user account.
     Consumes from earliest expiring balance first.
+    Also logs the consumption for history tracking.
     Returns True if successful, False if insufficient balance.
     """
     now = int(time.time())
@@ -395,6 +410,13 @@ def consume_tokens(conn, user_id: int, amount: int) -> bool:
         """, (new_remaining, balance_id))
         
         remaining_to_consume -= consume_from_this
+    
+    # Log the consumption for history tracking
+    if amount > 0:
+        conn.execute("""
+            INSERT INTO token_usage_logs (user_id, news_id, title, tokens_used, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, news_id, title, amount, now))
     
     conn.commit()
     return True
