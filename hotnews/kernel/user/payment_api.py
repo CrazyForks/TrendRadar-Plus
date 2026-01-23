@@ -340,6 +340,7 @@ def get_user_token_balance(conn, user_id: int) -> Dict[str, Any]:
     Get user's token balance.
     Returns total available tokens and breakdown by recharge.
     """
+    import logging
     now = int(time.time())
     
     # Get all non-expired recharge logs with remaining tokens
@@ -364,6 +365,8 @@ def get_user_token_balance(conn, user_id: int) -> Dict[str, Any]:
             "created_at": row[4],
         })
     
+    logging.info(f"[TokenBalance] user_id={user_id}, total={total}, details_count={len(details)}")
+    
     return {
         "total": total,
         "details": details,
@@ -377,6 +380,7 @@ def consume_tokens(conn, user_id: int, amount: int, news_id: str = None, title: 
     Also logs the consumption for history tracking.
     Returns True if successful, False if insufficient balance.
     """
+    import logging
     now = int(time.time())
     
     # Get available balances ordered by expiry
@@ -391,7 +395,10 @@ def consume_tokens(conn, user_id: int, amount: int, news_id: str = None, title: 
     
     # Calculate total available
     total_available = sum(b[1] for b in balances)
+    logging.info(f"[TokenConsume] user_id={user_id}, amount={amount}, total_available={total_available}, balances_count={len(balances)}")
+    
     if total_available < amount:
+        logging.warning(f"[TokenConsume] Insufficient balance: {total_available} < {amount}")
         return False
     
     # Consume from each balance
@@ -403,6 +410,7 @@ def consume_tokens(conn, user_id: int, amount: int, news_id: str = None, title: 
         consume_from_this = min(remaining_to_consume, balance_remaining)
         new_remaining = balance_remaining - consume_from_this
         
+        logging.info(f"[TokenConsume] Updating balance_id={balance_id}: {balance_remaining} -> {new_remaining}")
         conn.execute("""
             UPDATE token_recharge_logs
             SET remaining = ?
@@ -417,8 +425,10 @@ def consume_tokens(conn, user_id: int, amount: int, news_id: str = None, title: 
             INSERT INTO token_usage_logs (user_id, news_id, title, tokens_used, created_at)
             VALUES (?, ?, ?, ?, ?)
         """, (user_id, news_id, title, amount, now))
+        logging.info(f"[TokenConsume] Logged consumption: user_id={user_id}, tokens={amount}")
     
     conn.commit()
+    logging.info(f"[TokenConsume] Committed successfully for user_id={user_id}")
     return True
 
 

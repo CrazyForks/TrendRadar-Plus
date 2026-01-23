@@ -399,8 +399,29 @@ window.showPlansSection = showPlansSection;
 window.loadPlans = loadPlans;
 window.openUsageModal = openUsageModal;
 window.closeUsageModal = closeUsageModal;
+window.refreshUsageData = refreshUsageData;
 
 export { formatTokens, openUsageModal, closeUsageModal };
+
+/**
+ * Refresh usage data (刷新余额和消费数据)
+ */
+async function refreshUsageData() {
+    const btn = document.querySelector('.usage-refresh-btn');
+    if (btn) {
+        btn.classList.add('spinning');
+        btn.disabled = true;
+    }
+    
+    try {
+        await loadUsageData();
+    } finally {
+        if (btn) {
+            btn.classList.remove('spinning');
+            btn.disabled = false;
+        }
+    }
+}
 
 /**
  * Create and show usage modal (账户明细 - 方案C：只显示统计+充值记录)
@@ -453,6 +474,7 @@ function createUsageModal() {
             
             <div class="usage-modal-header">
                 <h2>📊 账户明细</h2>
+                <button class="usage-refresh-btn" onclick="refreshUsageData()" title="刷新数据">🔄</button>
             </div>
             
             <div class="usage-modal-body">
@@ -620,12 +642,40 @@ function ensureUsageModalStyles() {
         .usage-modal-header {
             padding: 20px 24px 16px;
             border-bottom: 1px solid #334155;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
         .usage-modal-header h2 {
             margin: 0;
             font-size: 18px;
             font-weight: 600;
             color: #f1f5f9;
+        }
+        .usage-refresh-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #94a3b8;
+        }
+        .usage-refresh-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #f1f5f9;
+        }
+        .usage-refresh-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .usage-refresh-btn.spinning {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
         .usage-modal-body {
             padding: 20px 24px;
