@@ -12,7 +12,7 @@ import uuid
 import logging
 from typing import Optional, Dict, Any, Tuple
 
-from aiohttp import web
+from fastapi import APIRouter, Request, HTTPException, Body
 
 from .subscription_service import (
     get_active_subscription_plans,
@@ -29,75 +29,89 @@ from .payment_api import (
 
 logger = logging.getLogger(__name__)
 
-
-def setup_subscription_routes(app: web.Application):
-    """注册订阅相关路由"""
-    app.router.add_get('/api/subscription/plans', handle_get_plans)
-    app.router.add_get('/api/subscription/status', handle_get_status)
-    app.router.add_post('/api/subscription/create', handle_create_order)
+router = APIRouter(prefix="/api/subscription", tags=["subscription"])
 
 
-async def handle_get_plans(request: web.Request) -> web.Response:
+def _get_online_db_conn(request: Request):
+    from hotnews.web.db_online import get_online_db_conn
+    return get_online_db_conn(request.app.state.project_root)
+
+
+def _get_current_user(request: Request):
+    """Get current authenticated user or raise 401."""
+    from hotnews.kernel.auth.auth_api import _get_session_token
+    from hotnews.kernel.auth.auth_service import validate_session
+    from hotnews.web.user_db import get_user_db_conn
+    
+    session_token = _get_session_token(request)
+    if not session_token:
+        raise HTTPException(status_code=401, detail="请先登录")
+    
+    conn = get_user_db_conn(request.app.state.project_root)
+    is_valid, user_info = validate_session(conn, session_token)
+    
+    if not is_valid or not user_info:
+        raise HTTPException(status_code=401, detail="登录已过期")
+    
+    return user_info
+
+
+@router.get("/plans")
+async def handle_get_plans(request: Request):
     """获取订阅套餐列表"""
     try:
-        conn = request.app['db']
+        conn = _get_online_db_conn(request)
         plans = get_active_subscription_plans(conn)
-        return web.json_response({"plans": plans})
+        return {"plans": plans}
     except Exception as e:
         logger.exception(f"Get subscription plans error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-async def handle_get_status(request: web.Request) -> web.Response:
+@router.get("/status")
+async def handle_get_status(request: Request):
     """获取用户订阅状态"""
     try:
-        # 获取用户ID
-        user_id = request.get('user_id')
-        if not user_id:
-            return web.json_response({"error": "请先登录"}, status=401)
-        
-        conn = request.app['db']
+        user = _get_current_user(request)
+        conn = _get_online_db_conn(request)
         
         # 获取token余额
-        balance = get_user_token_balance(conn, user_id)
+        balance = get_user_token_balance(conn, user["id"])
         token_balance = balance['total']
         
         # 获取订阅状态
-        status = get_subscription_status(conn, user_id, token_balance)
+        status = get_subscription_status(conn, user["id"], token_balance)
         
-        return web.json_response(status)
+        return status
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Get subscription status error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-async def handle_create_order(request: web.Request) -> web.Response:
+@router.post("/create")
+async def handle_create_order(
+    request: Request,
+    plan_id: int = Body(..., embed=True)
+):
     """创建订阅订单"""
     try:
-        # 获取用户ID
-        user_id = request.get('user_id')
-        if not user_id:
-            return web.json_response({"error": "请先登录"}, status=401)
-        
-        # 解析请求体
-        data = await request.json()
-        plan_id = data.get('plan_id')
-        
-        if not plan_id:
-            return web.json_response({"error": "请选择套餐"}, status=400)
-        
-        conn = request.app['db']
+        user = _get_current_user(request)
+        conn = _get_online_db_conn(request)
         
         # 创建订阅支付订单
-        result, error = await create_subscription_payment(plan_id, user_id, conn)
+        result, error = await create_subscription_payment(plan_id, user["id"], conn)
         
         if error:
-            return web.json_response({"error": error}, status=400)
+            raise HTTPException(status_code=400, detail=error)
         
-        return web.json_response(result)
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"Create subscription order error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def create_subscription_payment(
