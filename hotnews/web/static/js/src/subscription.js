@@ -173,7 +173,7 @@ async function loadSubscriptionPlans() {
                 const expireDate = new Date(statusData.expire_at * 1000);
                 hintEl.innerHTML = `<span class="vip-badge">VIP</span> 到期: ${expireDate.toLocaleDateString('zh-CN')} · 剩余 ${statusData.usage_remaining} 次`;
             } else {
-                hintEl.textContent = `Token余额: ${formatNumber(statusData.token_balance || 0)}`;
+                hintEl.textContent = '开通会员，畅享 AI 总结';
             }
         }
         
