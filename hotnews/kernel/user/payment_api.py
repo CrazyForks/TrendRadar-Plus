@@ -83,6 +83,18 @@ def init_payment_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_user ON payment_orders(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_status ON payment_orders(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_order_no ON payment_orders(order_no)")
+    
+    # Migration: add new columns to existing payment_orders table (must be before index creation)
+    try:
+        conn.execute("ALTER TABLE payment_orders ADD COLUMN order_type TEXT DEFAULT 'token'")
+    except:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE payment_orders ADD COLUMN subscription_plan_id INTEGER")
+    except:
+        pass  # Column already exists
+    
+    # Now create index on order_type (after column exists)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_type ON payment_orders(order_type)")
     
     # Token recharge logs table
@@ -177,16 +189,6 @@ def init_payment_tables(conn):
                 ('月度会员', 'monthly', 1990, 30, 150, NULL, 1, ?),
                 ('年度会员', 'yearly', 15900, 365, 1800, '省33%', 2, ?)
         """, (now, now))
-    
-    # Try to add new columns to existing payment_orders table (for migration)
-    try:
-        conn.execute("ALTER TABLE payment_orders ADD COLUMN order_type TEXT DEFAULT 'token'")
-    except:
-        pass  # Column already exists
-    try:
-        conn.execute("ALTER TABLE payment_orders ADD COLUMN subscription_plan_id INTEGER")
-    except:
-        pass  # Column already exists
     
     conn.commit()
 
