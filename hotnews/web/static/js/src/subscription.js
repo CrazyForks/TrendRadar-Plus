@@ -1,1273 +1,704 @@
-import { TR, ready, escapeHtml } from './core.js';
-import { storage } from './storage.js';
+/**
+ * Subscription Module - VIP 订阅支付
+ * 支持月付和年付订阅
+ */
 
-const STORAGE_KEY = 'rss_subscriptions';
+import { authState } from './auth-state.js';
 
-let _selectedSource = null;
-let _subsSnapshot = null;
+// QR Code library (loaded dynamically)
+let QRCode = null;
 
-let _serverEnabled = false;
-let _serverChecked = false;
-let _serverSyncInFlight = false;
+// State
+let currentOrderNo = null;
+let pollTimer = null;
+let countdownTimer = null;
+let countdownSeconds = 0;
 
-let _rssFeedTitleUserEdited = false;
-let _rssFeedTitleAutoFilled = false;
+// QR code validity period (5 minutes)
+const QR_VALIDITY_SECONDS = 5 * 60;
 
-const _previewStatusBySourceId = new Map();
-const _pendingSyncBySourceId = new Set();
-
-let _pickerOpen = false;
-let _pickerCategory = '';
-let _pickerQuery = '';
-let _pickerLimit = 80;
-let _pickerOffset = 0;
-let _pickerTotal = 0;
-let _pickerLoading = false;
-let _pickerItems = [];
-let _pickerRenderRaf = 0;
-let _pickerDebounceTimer = 0;
-const _ROW_H = 44;
-const _OVERSCAN = 10;
-
-let _prefetchWarmupTimer = 0;
-let _prefetchWarmupLastAt = 0;
-const _prefetchWarmupDedup = new Map();
-
-function _sleep(ms) {
-    return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, ms || 0)));
-}
-
-function _cssEscape(s) {
-    try {
-        if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(String(s || ''));
-    } catch (e) {
-        // ignore
-    }
-    return String(s || '').replace(/"/g, '\\"');
-}
-
-function _hasRssPlatformNews(sourceIds) {
-    const ids = Array.isArray(sourceIds) ? sourceIds : [];
-    for (const sidRaw of ids) {
-        const sid = String(sidRaw || '').trim();
-        if (!sid) continue;
-        const pid = `rss-${sid}`;
-        const selector = `.platform-card[data-platform="${_cssEscape(pid)}"]`;
-        const card = document.querySelector(selector);
-        if (!card) continue;
-        const items = card.querySelectorAll('.news-item');
-        if (items && items.length > 0) return true;
-    }
-    return false;
-}
-
-function _setPendingSync(sourceIds, pending) {
-    const ids = Array.isArray(sourceIds) ? sourceIds : [];
-    for (const sidRaw of ids) {
-        const sid = String(sidRaw || '').trim();
-        if (!sid) continue;
-        if (pending) _pendingSyncBySourceId.add(sid);
-        else _pendingSyncBySourceId.delete(sid);
-    }
-}
-
-function _getModalEl() {
-    return document.getElementById('rssSubscriptionModal');
-}
-
-function _getPickerModalEl() {
-    return document.getElementById('rssSourcePickerModal');
-}
-
-function _normalizeSubsForServer(subs) {
-    const arr = Array.isArray(subs) ? subs : [];
-    return arr
-        .filter((s) => s && typeof s === 'object')
-        .map((s) => {
-            return {
-                source_id: String(s.source_id || s.rss_source_id || '').trim(),
-                url: String(s.url || '').trim(),
-                feed_title: String(s.feed_title || s.display_name || '').trim(),
-                column: String(s.column || 'RSS').trim() || 'RSS',
-                platform_id: String(s.platform_id || '').trim(),
-            };
-        })
-        .filter((s) => !!s.source_id);
-}
-
-async function _syncSubscriptionsFromServer({ showHintOn403 } = {}) {
-    if (_serverSyncInFlight) return;
-    _serverSyncInFlight = true;
-    try {
-        const resp = await fetch('/api/me/rss-subscriptions');
-        if (resp.status === 403) {
-            _serverEnabled = false;
-            _serverChecked = true;
-            try { _syncServerEnabledFlag(); } catch (e) { /* ignore */ }
-            if (showHintOn403) {
-                _setSaveStatus('未开启服务端同步（Not allowlisted），当前使用本地订阅', { variant: 'info' });
-            }
+/**
+ * Load QRCode library dynamically
+ */
+async function loadQRCodeLib() {
+    if (QRCode) return QRCode;
+    
+    return new Promise((resolve, reject) => {
+        if (window.QRCode) {
+            QRCode = window.QRCode;
+            resolve(QRCode);
             return;
         }
-        const payload = await resp.json().catch(() => ({}));
-        if (!resp.ok) {
-            _serverChecked = true;
-            _serverEnabled = false;
-            return;
-        }
-
-        const subs = _normalizeSubsForServer(payload?.subscriptions);
-        _serverChecked = true;
-        _serverEnabled = true;
-        try { _syncServerEnabledFlag(); } catch (e) { /* ignore */ }
-
-        try {
-            subscription.setSubscriptions(subs);
-        } catch (e) {
-            // ignore
-        }
-
-        try {
-            _subsSnapshot = subscription.getSubscriptions();
-        } catch (e) {
-            _subsSnapshot = null;
-        }
-        _renderList();
-        _updateRssGatingUI();
-    } finally {
-        _serverSyncInFlight = false;
-    }
+        
+        const script = document.createElement('script');
+        script.src = '/static/js/lib/qrcode.min.js';
+        script.onload = () => {
+            QRCode = window.QRCode;
+            resolve(QRCode);
+        };
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
 }
 
-function _getSaveBtnEl() {
+/**
+ * Get subscription status
+ */
+export async function getSubscriptionStatus() {
     try {
-        return document.querySelector('#rssSubscriptionModal .settings-btn-primary');
-    } catch (e) {
+        const res = await fetch('/api/subscription/status', { credentials: 'include' });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (err) {
+        console.error('Get subscription status error:', err);
         return null;
     }
 }
 
-function _getPreviewBtnEl() {
-    try {
-        return document.querySelector('#rssSubscriptionModal button[onclick="previewRssSubscription()"]');
-    } catch (e) {
-        return null;
-    }
-}
-
-function _subsKey(items) {
-    const arr = Array.isArray(items) ? items : [];
-    const normalized = arr
-        .filter((s) => s && typeof s === 'object')
-        .map((s) => {
-            return {
-                source_id: String(s.source_id || s.rss_source_id || '').trim(),
-                url: String(s.url || '').trim(),
-                feed_title: String(s.feed_title || '').trim(),
-                column: String(s.column || 'RSS').trim() || 'RSS'
-            };
-        })
-        .filter((s) => !!s.source_id || !!s.url)
-        .sort((a, b) => (a.source_id || '').localeCompare(b.source_id || ''));
-    return JSON.stringify(normalized);
-}
-
-function _diffNewSourceIds(prev, next) {
-    const prevArr = Array.isArray(prev) ? prev : [];
-    const nextArr = Array.isArray(next) ? next : [];
-    const prevSet = new Set(prevArr.map((s) => String(s?.source_id || s?.rss_source_id || '').trim()).filter(Boolean));
-    const out = [];
-    for (const s of nextArr) {
-        const sid = String(s?.source_id || s?.rss_source_id || '').trim();
-        if (!sid) continue;
-        if (prevSet.has(sid)) continue;
-        out.push(sid);
-    }
-    return out;
-}
-
-function _setBtnEnabled(btn, enabled) {
-    if (!btn) return;
-    try {
-        if (enabled) btn.removeAttribute('disabled');
-        else btn.setAttribute('disabled', 'true');
-    } catch (e) {
-        // ignore
-    }
-}
-
-function _setBtnAriaDisabled(btn, disabled) {
-    if (!btn) return;
-    const isDisabled = !!disabled;
-    try {
-        if (isDisabled) btn.setAttribute('aria-disabled', 'true');
-        else btn.removeAttribute('aria-disabled');
-    } catch (e) {
-        // ignore
-    }
-    try {
-        if (isDisabled) {
-            btn.style.opacity = '0.5';
-            btn.style.cursor = 'not-allowed';
-        } else {
-            btn.style.opacity = '';
-            btn.style.cursor = '';
-        }
-    } catch (e) {
-        // ignore
-    }
-}
-
-function _updateRssGatingUI() {
-    const previewBtn = _getPreviewBtnEl();
-    const saveBtn = _getSaveBtnEl();
-
-    const selectedId = _getSelectedSourceId();
-    // NOTE: do not use the native `disabled` attr for preview button, because many browsers
-    // will not show hover tooltips on disabled elements.
-    try {
-        if (previewBtn) previewBtn.removeAttribute('disabled');
-    } catch (e) {
-        // ignore
-    }
-    _setBtnAriaDisabled(previewBtn, !selectedId);
-
-    try {
-        if (previewBtn) {
-            if (!selectedId) {
-                previewBtn.setAttribute('title', '请先选择 RSS 源再预览');
-            } else {
-                previewBtn.removeAttribute('title');
-            }
-        }
-    } catch (e) {
-        // ignore
-    }
-
-    if (selectedId) {
-        const st = _previewStatusBySourceId.get(String(selectedId || '').trim());
-        if (st && st.ok === true && Number(st.entries_count || 0) === 0) {
-            _setSaveStatus('预览成功但暂无条目（entries=0），请稍后重试', { variant: 'info' });
-        }
-    }
-
-    const prev = Array.isArray(_subsSnapshot) ? _subsSnapshot : [];
-    const next = subscription.getSubscriptions();
-    const changed = _subsKey(prev) !== _subsKey(next);
-    const newIds = _diffNewSourceIds(prev, next);
-    const allNewOk = newIds.every((sid) => {
-        const st = _previewStatusBySourceId.get(sid);
-        return !!st && st.ok === true && Number(st.entries_count || 0) > 0;
-    });
-
-    const canSave = changed && allNewOk;
-    _setBtnEnabled(saveBtn, canSave);
-
-    if (!changed) {
-        if (!(selectedId && (() => {
-            const st = _previewStatusBySourceId.get(String(selectedId || '').trim());
-            return st && st.ok === true && Number(st.entries_count || 0) === 0;
-        })())) {
-            _setSaveStatus('请先通过预览加入至少一个订阅，再保存并刷新', { variant: 'info' });
-        }
+/**
+ * Open subscription modal
+ */
+export async function openSubscriptionModal() {
+    const user = authState.getUser();
+    if (!user) {
+        window.Toast?.show('请先登录', 'error');
+        window.openLoginModal?.();
         return;
     }
-    if (!allNewOk) {
-        if (!(selectedId && (() => {
-            const st = _previewStatusBySourceId.get(String(selectedId || '').trim());
-            return st && st.ok === true && Number(st.entries_count || 0) === 0;
-        })())) {
-            _setSaveStatus('新增订阅需要先预览且必须有条目（entries>0）', { variant: 'info' });
-        }
-        return;
+    
+    let modal = document.getElementById('subscriptionModal');
+    if (!modal) {
+        modal = createSubscriptionModal();
+        document.body.appendChild(modal);
     }
-    _setSaveStatus('', { variant: 'info' });
+    
+    currentOrderNo = null;
+    stopPolling();
+    
+    modal.classList.add('open');
+    await loadSubscriptionPlans();
 }
 
-async function _previewSource(sourceId) {
-    const previewEl = _getPreviewEl();
-    if (previewEl) previewEl.innerHTML = '<div style="color:#6b7280;">预览中...</div>';
-
-    const resp = await fetch(`/api/rss-sources/preview?source_id=${encodeURIComponent(sourceId)}`);
-    const payload = await resp.json();
-    if (!resp.ok) {
-        throw new Error(payload?.detail || 'Preview failed');
+/**
+ * Close subscription modal
+ */
+export function closeSubscriptionModal() {
+    const modal = document.getElementById('subscriptionModal');
+    if (modal) {
+        modal.classList.remove('open');
     }
-
-    const parsed = payload?.data || {};
-    const feedTitle = parsed?.feed?.title || '';
-    const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
-    const entriesCount = entries.length;
-
-    const lines = entries.slice(0, 5).map((e) => {
-        const t = escapeHtml(e?.title || '');
-        const l = escapeHtml(e?.link || '');
-        if (l) {
-            return `<div style="font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="${l}" target="_blank" rel="noopener noreferrer">${t || l}</a></div>`;
-        }
-        return `<div style="font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t}</div>`;
-    }).join('');
-
-    if (!_rssFeedTitleUserEdited && feedTitle) {
-        _setInputValue('rssFeedTitle', feedTitle);
-        _rssFeedTitleAutoFilled = true;
-    }
-
-    _previewStatusBySourceId.set(String(sourceId || '').trim(), {
-        ok: true,
-        entries_count: entriesCount,
-        ts: Date.now()
-    });
-
-    if (entriesCount > 0) {
-        try {
-            const urlFromSelected = _selectedSource ? String(_selectedSource.url || '').trim() : '';
-            const urlFinal = urlFromSelected || String(payload?.final_url || payload?.url || '').trim();
-            let column = _getInputValue('rssColumn') || '';
-            if (!column || String(column).trim().toUpperCase() === 'RSS') {
-                try {
-                    const activeTab = (TR.tabs && typeof TR.tabs.getActiveTabId === 'function') ? TR.tabs.getActiveTabId() : '';
-                    if (activeTab) column = String(activeTab);
-                } catch (e) {
-                    // ignore
-                }
-            }
-            if (!column) column = 'general';
-            const feedTitleFinal = _getInputValue('rssFeedTitle') || String(_selectedSource?.name || _selectedSource?.host || '').trim();
-
-            const subs = subscription.getSubscriptions();
-            const idx = subs.findIndex((s) => (s.source_id && s.source_id === String(sourceId || '').trim()));
-            const item = {
-                source_id: String(sourceId || '').trim(),
-                url: urlFinal,
-                feed_title: feedTitleFinal,
-                column,
-                platform_id: ''
-            };
-            if (idx >= 0) subs[idx] = item;
-            else subs.unshift(item);
-            subscription.setSubscriptions(subs);
-            _renderList();
-        } catch (e) {
-            // ignore
-        }
-    } else {
-        _setSaveStatus('预览成功但暂无条目（entries=0），请稍后重试', { variant: 'info' });
-    }
-
-    _updateRssGatingUI();
-
-    if (previewEl) {
-        previewEl.innerHTML = `
-            <div style="display:flex;flex-direction:column;gap:6px;">
-                <div style="font-weight:800;">${escapeHtml(feedTitle || 'Feed')}</div>
-                <div style="font-size:0.78rem;color:#6b7280;">条目数：${entries.length}</div>
-                <div style="display:flex;flex-direction:column;gap:4px;">${lines}</div>
-            </div>`;
-    }
+    stopPolling();
+    stopCountdown();
+    currentOrderNo = null;
 }
 
-function _getListEl() {
-    return document.getElementById('rssSubscriptionList');
-}
-
-function _getPreviewEl() {
-    return document.getElementById('rssSubscriptionPreview');
-}
-
-function _getSaveStatusEl() {
-    return document.getElementById('rssSubscriptionSaveStatus');
-}
-
-function _setSaveStatus(msg, opts = {}) {
-    const el = _getSaveStatusEl();
-    if (!el) return;
-    const variant = String(opts.variant || '').toLowerCase();
-    const color = variant === 'error' ? '#dc2626' : (variant === 'success' ? '#16a34a' : (variant === 'info' ? '#6b7280' : '#6b7280'));
-    el.style.color = color;
-    el.textContent = msg == null ? '' : String(msg);
-}
-
-function _getSelectedSourceIdInputEl() {
-    return document.getElementById('rssSelectedSourceId');
-}
-
-function _getSelectedSourceLabelEl() {
-    return document.getElementById('rssSelectedSourceLabel');
-}
-
-function _getRequestSectionEl() {
-    return document.getElementById('rssRequestSection');
-}
-
-function _getCategoryListEl() {
-    return document.getElementById('rssSourceCategoryList');
-}
-
-function _getSearchInputEl() {
-    return document.getElementById('rssSourceSearchInput');
-}
-
-function _getResultsEl() {
-    return document.getElementById('rssSourceResults');
-}
-
-function _getPickerStatusEl() {
-    return document.getElementById('rssSourcePickerStatus');
-}
-
-function _getInputValue(id) {
-    const el = document.getElementById(id);
-    return (el && typeof el.value === 'string') ? el.value.trim() : '';
-}
-
-function _setInputValue(id, value) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.value = value == null ? '' : String(value);
-}
-
-function _getSelectedSourceId() {
-    const el = _getSelectedSourceIdInputEl();
-    return (el && typeof el.value === 'string') ? el.value.trim() : '';
-}
-
-function _setSelectedSource(source) {
-    _selectedSource = source && typeof source === 'object' ? source : null;
-    const idEl = _getSelectedSourceIdInputEl();
-    const labelEl = _getSelectedSourceLabelEl();
-    const sid = _selectedSource ? String(_selectedSource.id || '').trim() : '';
-    const name = _selectedSource ? String(_selectedSource.name || _selectedSource.host || sid) : '';
-    const url = _selectedSource ? String(_selectedSource.url || '').trim() : '';
-    if (idEl) idEl.value = sid;
-    if (labelEl) {
-        labelEl.textContent = sid ? `${name}${url ? ` (${url})` : ''}` : '未选择';
-    }
-
-    if (sid && !_rssFeedTitleUserEdited) {
-        const cur = _getInputValue('rssFeedTitle');
-        if (!cur || _rssFeedTitleAutoFilled) {
-            _setInputValue('rssFeedTitle', name);
-            _rssFeedTitleAutoFilled = true;
-        }
-    }
-
-    if (sid) {
-        _schedulePrefetchWarmup(sid);
-    }
-
-    _updateRssGatingUI();
-}
-
-function _schedulePrefetchWarmup(sourceId) {
-    const sid = String(sourceId || '').trim();
-    if (!sid) return;
-
-    const now = Date.now();
-    const dedupMs = 15000;
-    const last = _prefetchWarmupDedup.get(sid) || 0;
-    if (now - last < dedupMs) return;
-
-    _prefetchWarmupDedup.set(sid, now);
-
-    if (_prefetchWarmupTimer) {
-        window.clearTimeout(_prefetchWarmupTimer);
-        _prefetchWarmupTimer = 0;
-    }
-
-    _prefetchWarmupTimer = window.setTimeout(async () => {
-        _prefetchWarmupTimer = 0;
-        const sinceLast = Date.now() - (_prefetchWarmupLastAt || 0);
-        if (sinceLast < 400) {
-            // small global debounce
-            _prefetchWarmupTimer = window.setTimeout(() => {
-                _prefetchWarmupTimer = 0;
-                _schedulePrefetchWarmup(sid);
-            }, 400 - sinceLast);
-            return;
-        }
-        _prefetchWarmupLastAt = Date.now();
-        try {
-            await fetch('/api/rss-sources/warmup?wait_ms=0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ source_ids: [sid], priority: 'high' })
-            });
-        } catch (e) {
-            // ignore
-        }
-    }, 300);
-}
-
-function _setPickerStatus(msg) {
-    const el = _getPickerStatusEl();
-    if (!el) return;
-    el.textContent = msg == null ? '' : String(msg);
-}
-
-function _normalizeName(s) {
-    return String(s || '').trim().toLowerCase();
-}
-
-function _getBuiltinPlatformNameSet() {
-    const set = new Set();
-    try {
-        document.querySelectorAll('.platform-card').forEach((card) => {
-            const pid = String(card?.dataset?.platform || '').trim();
-            if (!pid) return;
-            if (pid.startsWith('rss-')) return;
-            const nameEl = card.querySelector('.platform-name');
-            const raw = (nameEl?.textContent || '').trim();
-            if (!raw) return;
-            const cleaned = raw
-                .replace(/📱/g, '')
-                .replace(/NEW/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-            const key = _normalizeName(cleaned);
-            if (key) set.add(key);
-        });
-    } catch (e) {
-        // ignore
-    }
-    return set;
-}
-
-async function _loadCategories() {
-    const resp = await fetch('/api/rss-source-categories');
-    const payload = await resp.json();
-    if (!resp.ok) {
-        throw new Error(payload?.detail || 'Failed to load categories');
-    }
-    const categories = Array.isArray(payload?.categories) ? payload.categories : [];
-    const listEl = _getCategoryListEl();
-    if (!listEl) return categories;
-    const html = categories.map((c) => {
-        const id = String(c?.id || '');
-        const name = String(c?.name || id || '');
-        const count = Number(c?.count || 0);
-        const active = id === _pickerCategory;
-        return `
-          <button type="button" class="platform-select-action-btn" data-cat="${escapeHtml(id)}" style="justify-content:flex-start;${active ? 'background:#111827;color:#fff;border-color:#111827;' : ''}">
-            ${escapeHtml(name)} <span style="opacity:0.7;">(${count})</span>
-          </button>`;
-    }).join('');
-    listEl.innerHTML = html;
-    listEl.querySelectorAll('button[data-cat]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            _pickerCategory = String(btn.getAttribute('data-cat') || '');
-            _loadCategories().catch(() => {});
-            _startSearch({ reset: true });
-        });
-    });
-    return categories;
-}
-
-async function _searchSourcesPage(opts = {}) {
-    const reset = opts.reset === true;
-    if (_pickerLoading) return;
-    _pickerLoading = true;
-    try {
-        if (reset) {
-            _pickerItems = [];
-            _pickerOffset = 0;
-            _pickerTotal = 0;
-        }
-        _setPickerStatus('加载中...');
-        const qs = new URLSearchParams();
-        if (_pickerQuery) qs.set('q', _pickerQuery);
-        if (_pickerCategory) qs.set('category', _pickerCategory);
-        qs.set('limit', String(_pickerLimit));
-        qs.set('offset', String(_pickerOffset));
-        const resp = await fetch(`/api/rss-sources/search?${qs.toString()}`);
-        const payload = await resp.json();
-        if (!resp.ok) throw new Error(payload?.detail || 'Search failed');
-        const items = Array.isArray(payload?.sources) ? payload.sources : [];
-        const total = Number(payload?.total || 0);
-        _pickerTotal = total;
-        if (reset) {
-            _pickerItems = items;
-        } else {
-            _pickerItems = _pickerItems.concat(items);
-        }
-        _pickerOffset = Number(payload?.next_offset ?? (_pickerOffset + items.length)) || (_pickerOffset + items.length);
-        _schedulePickerRender();
-        const more = _pickerItems.length < _pickerTotal;
-        _setPickerStatus(`已加载 ${_pickerItems.length}/${_pickerTotal}${more ? '（继续滚动加载）' : ''}`);
-    } finally {
-        _pickerLoading = false;
-    }
-}
-
-function _schedulePickerRender() {
-    if (_pickerRenderRaf) return;
-    _pickerRenderRaf = window.requestAnimationFrame(() => {
-        _pickerRenderRaf = 0;
-        _renderPickerVirtual();
-    });
-}
-
-function _renderPickerVirtual() {
-    const root = _getResultsEl();
-    if (!root) return;
-
-    const scrollTop = root.scrollTop || 0;
-    const viewH = root.clientHeight || 360;
-    const totalItems = _pickerItems.length;
-    const totalH = totalItems * _ROW_H;
-
-    const start = Math.max(0, Math.floor(scrollTop / _ROW_H) - _OVERSCAN);
-    const end = Math.min(totalItems, Math.ceil((scrollTop + viewH) / _ROW_H) + _OVERSCAN);
-
-    let inner = root.querySelector(':scope > .rss-src-inner');
-    if (!inner) {
-        root.innerHTML = '<div class="rss-src-inner" style="position:relative;width:100%;"></div>';
-        inner = root.querySelector(':scope > .rss-src-inner');
-    }
-    inner.style.height = `${totalH}px`;
-
-    const parts = [];
-    for (let i = start; i < end; i++) {
-        const s = _pickerItems[i] || {};
-        const sid = String(s.id || '').trim();
-        const name = String(s.name || s.host || sid);
-        const url = String(s.url || '');
-        parts.push(
-            `<div class="rss-source-item" data-source-id="${escapeHtml(sid)}" style="position:absolute;left:0;right:0;top:${i * _ROW_H}px;height:${_ROW_H}px;padding:8px 10px;border-bottom:1px solid #f3f4f6;cursor:pointer;display:flex;align-items:center;gap:8px;">
-              <div style="min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                <span style="font-weight:700;font-size:0.9rem;color:#111827;">${escapeHtml(name)}</span>
-                <span style="font-weight:400;font-size:0.75rem;color:#9ca3af;"> — </span>
-                <span style="font-weight:400;font-size:0.72rem;color:#6b7280;">${escapeHtml(url)}</span>
-              </div>
-            </div>`
-        );
-    }
-    inner.innerHTML = parts.join('');
-
-    inner.querySelectorAll('.rss-source-item[data-source-id]').forEach((el) => {
-        el.addEventListener('click', () => {
-            const sid = String(el.getAttribute('data-source-id') || '').trim();
-            const source = _pickerItems.find((x) => x && String(x.id || '').trim() === sid) || null;
-            _setSelectedSource(source);
-            closePicker();
-        });
-    });
-
-    const nearBottom = scrollTop + viewH >= totalH - _ROW_H * 6;
-    if (nearBottom && _pickerItems.length < _pickerTotal) {
-        _searchSourcesPage({ reset: false }).catch((e) => {
-            _setPickerStatus(e?.message || String(e));
-        });
-    }
-}
-
-function _startSearch(opts = {}) {
-    const reset = opts.reset !== false;
-    _searchSourcesPage({ reset }).catch((e) => {
-        _setPickerStatus(e?.message || String(e));
-    });
-}
-
-function openPicker() {
-    const modal = _getPickerModalEl();
-    if (!modal) return;
-    _pickerOpen = true;
-    modal.classList.add('show');
-    const input = _getSearchInputEl();
-    if (input) {
-        input.value = _pickerQuery;
-        input.focus();
-    }
-    _loadCategories().catch(() => {});
-    _startSearch({ reset: true });
-}
-
-function closePicker() {
-    const modal = _getPickerModalEl();
-    if (!modal) return;
-    _pickerOpen = false;
-    modal.classList.remove('show');
-}
-
-function _renderList() {
-    const listEl = _getListEl();
-    if (!listEl) return;
-
-    const subs = subscription.getSubscriptions();
-    if (!subs.length) {
-        listEl.innerHTML = '<div style="color:#6b7280;font-size:0.85rem;">暂无订阅</div>';
-        return;
-    }
-
-    const html = subs.map((s, idx) => {
-        const sid = String(s?.source_id || s?.rss_source_id || '').trim();
-        const url = escapeHtml(s.url || '');
-        const title = escapeHtml(s.feed_title || '');
-        const column = escapeHtml(s.column || 'RSS');
-        const name = title ? `${title}` : url;
-        const pending = sid && _pendingSyncBySourceId.has(sid);
-        return `
-            <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e5e7eb;">
-                <div style="min-width:0;flex:1;">
-                    <div style="display:flex;gap:8px;align-items:baseline;">
-                        <div style="min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                            <span style="font-weight:700;font-size:0.9rem;color:#111827;">${name}</span>
-                            ${pending ? '<span style="margin-left:8px;font-weight:400;font-size:0.75rem;color:#9ca3af;">同步中...</span>' : ''}
-                            <span style="font-weight:400;font-size:0.75rem;color:#9ca3af;"> — </span>
-                            <span style="font-weight:400;font-size:0.72rem;color:#6b7280;">${url}</span>
-                        </div>
-                        <div style="flex:0 0 auto;font-size:0.72rem;color:#6b7280;white-space:nowrap;">栏目：${column}</div>
+/**
+ * Create subscription modal HTML
+ */
+function createSubscriptionModal() {
+    const modal = document.createElement('div');
+    modal.id = 'subscriptionModal';
+    modal.className = 'subscription-modal';
+    
+    modal.innerHTML = `
+        <div class="subscription-modal-backdrop" onclick="closeSubscriptionModal()"></div>
+        <div class="subscription-modal-content">
+            <button class="subscription-modal-close" onclick="closeSubscriptionModal()">×</button>
+            
+            <div class="subscription-modal-header">
+                <h2>👑 开通会员</h2>
+                <p class="subscription-status-hint" id="subscriptionStatusHint"></p>
+            </div>
+            
+            <div class="subscription-modal-body">
+                <!-- Plans Section -->
+                <div id="subscriptionPlansSection" class="subscription-plans-section">
+                    <div class="subscription-loading">加载中...</div>
+                </div>
+                
+                <!-- QR Code Section -->
+                <div id="subscriptionQRSection" class="subscription-qr-section" style="display:none;">
+                    <div class="subscription-qr-back" onclick="showSubscriptionPlans()">
+                        <span>← 返回选择套餐</span>
+                    </div>
+                    <div class="subscription-qr-container">
+                        <div id="subscriptionQRCode" class="subscription-qr-code"></div>
+                        <div class="subscription-qr-hint">请使用微信扫码支付</div>
+                        <div id="subscriptionCountdown" class="subscription-countdown">有效期 <span id="subCountdownTime">5:00</span></div>
+                    </div>
+                    <div class="subscription-order-info">
+                        <div class="subscription-order-amount">¥<span id="subscriptionOrderAmount">--</span></div>
+                        <div class="subscription-order-plan"><span id="subscriptionOrderPlan">--</span></div>
+                    </div>
+                    <div id="subscriptionStatus" class="subscription-status">等待支付...</div>
+                    <div class="subscription-refresh-hint">
+                        已支付？<a href="javascript:void(0)" onclick="manualCheckSubscription()">刷新状态</a>
                     </div>
                 </div>
-                <div style="display:flex;gap:6px;flex:0 0 auto;">
-                    <button type="button" class="platform-select-action-btn" onclick="removeRssSubscription(${idx})">删除</button>
+                
+                <!-- Success Section -->
+                <div id="subscriptionSuccessSection" class="subscription-success-section" style="display:none;">
+                    <div class="subscription-success-icon">🎉</div>
+                    <div class="subscription-success-title">开通成功</div>
+                    <div class="subscription-success-desc">您已成为 VIP 会员</div>
+                    <button class="subscription-success-btn" onclick="closeSubscriptionModal()">完成</button>
                 </div>
-            </div>`;
-    }).join('');
-
-    listEl.innerHTML = html;
-    _updateRssGatingUI();
+            </div>
+        </div>
+    `;
+    
+    ensureSubscriptionStyles();
+    return modal;
 }
 
-async function _previewUrl(url) {
-    const previewEl = _getPreviewEl();
-    if (previewEl) previewEl.innerHTML = '<div style="color:#6b7280;">预览中...</div>';
-
-    const resp = await fetch(`/api/proxy/fetch?url=${encodeURIComponent(url)}`);
-    const payload = await resp.json();
-    if (!resp.ok) {
-        throw new Error(payload?.detail || 'Preview failed');
-    }
-
-    const parsed = payload?.data || {};
-    const feedTitle = parsed?.feed?.title || '';
-    const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
-
-    const lines = entries.slice(0, 5).map((e) => {
-        const t = escapeHtml(e?.title || '');
-        const l = escapeHtml(e?.link || '');
-        if (l) {
-            return `<div style="font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><a href="${l}" target="_blank" rel="noopener noreferrer">${t || l}</a></div>`;
-        }
-        return `<div style="font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t}</div>`;
-    }).join('');
-
-    if (!_rssFeedTitleUserEdited && feedTitle) {
-        _setInputValue('rssFeedTitle', feedTitle);
-        _rssFeedTitleAutoFilled = true;
-    }
-
-    if (previewEl) {
-        previewEl.innerHTML = `
-            <div style="display:flex;flex-direction:column;gap:6px;">
-                <div style="font-weight:800;">${escapeHtml(feedTitle || 'Feed')}</div>
-                <div style="font-size:0.78rem;color:#6b7280;">条目数：${entries.length}</div>
-                <div style="display:flex;flex-direction:column;gap:4px;">${lines}</div>
-            </div>`;
-    }
-}
-
-export const subscription = {
-    getSubscriptionsRaw() {
-        const raw = storage.get(STORAGE_KEY, []);
-        return Array.isArray(raw) ? raw : [];
-    },
-
-    setSubscriptionsRaw(subs) {
-        if (!Array.isArray(subs)) {
-            storage.set(STORAGE_KEY, []);
-            return;
-        }
-        storage.set(STORAGE_KEY, subs);
-    },
-
-    getSubscriptions() {
-        const raw = this.getSubscriptionsRaw();
-        return raw
-            .filter((s) => s && typeof s === 'object')
-            .map((s) => {
-                return {
-                    source_id: String(s.source_id || s.rss_source_id || '').trim(),
-                    url: String(s.url || '').trim(),
-                    feed_title: String(s.feed_title || '').trim(),
-                    column: String(s.column || 'RSS').trim() || 'RSS',
-                    platform_id: String(s.platform_id || '').trim()
-                };
-            })
-            .filter((s) => !!s.source_id || !!s.url);
-    },
-
-    setSubscriptions(subs) {
-        this.setSubscriptionsRaw(subs);
-    },
-
-    ensureSnapshot() {
-        if (Array.isArray(_subsSnapshot)) return;
-        try {
-            _subsSnapshot = this.getSubscriptions();
-        } catch (e) {
-            _subsSnapshot = null;
-        }
-    },
-
-    stageFromCatalogPreview(opts = {}) {
-        const sid = String(opts?.source_id || opts?.rss_source_id || '').trim();
-        if (!sid) return;
-
-        const url = String(opts?.url || '').trim();
-        const feedTitle = String(opts?.feed_title || opts?.name || '').trim();
-        const column = String(opts?.column || 'RSS').trim() || 'RSS';
-
-        this.ensureSnapshot();
-
-        const subs = this.getSubscriptions();
-        const idx = subs.findIndex((s) => (s?.source_id && s.source_id === sid));
-        const item = {
-            source_id: sid,
-            url,
-            feed_title: feedTitle,
-            column,
-            platform_id: ''
-        };
-        if (idx >= 0) subs[idx] = item;
-        else subs.unshift(item);
-        this.setSubscriptions(subs);
-
-        const entriesCount = Number(opts?.entries_count ?? 0) || 0;
-        _previewStatusBySourceId.set(sid, {
-            ok: true,
-            entries_count: entriesCount,
-            ts: Date.now()
-        });
-
-        try {
-            _renderList();
-        } catch (e) {
-            // ignore
-        }
-        _updateRssGatingUI();
-    },
-
-    open() {
-        const modal = _getModalEl();
-        if (!modal) return;
-        try {
-            _subsSnapshot = this.getSubscriptions();
-        } catch (e) {
-            _subsSnapshot = null;
-        }
-        _setInputValue('rssFeedTitle', '');
-        _rssFeedTitleAutoFilled = false;
-        _rssFeedTitleUserEdited = false;
-        _previewStatusBySourceId.clear();
-        _pendingSyncBySourceId.clear();
-        _renderList();
-        const previewEl = _getPreviewEl();
-        if (previewEl) previewEl.innerHTML = '';
-        _setSaveStatus('');
-        modal.classList.add('show');
-        _updateRssGatingUI();
-
-        // Best-effort: if allowlisted, server is the source of truth.
-        // Do not block UI; sync in background and re-render.
-        _syncSubscriptionsFromServer({ showHintOn403: false }).catch(() => {});
-    },
-
-    close() {
-        const modal = _getModalEl();
-        if (!modal) return;
-        modal.classList.remove('show');
-    },
-
-    async previewCurrent() {
-        const sid = _getSelectedSourceId();
-        if (!sid) {
-            alert('请选择 RSS 源');
-            return;
-        }
-        try {
-            await _previewSource(sid);
-        } catch (e) {
-            _previewStatusBySourceId.set(String(sid || '').trim(), {
-                ok: false,
-                entries_count: 0,
-                ts: Date.now(),
-                error: String(e?.message || e)
-            });
-            _updateRssGatingUI();
-            const previewEl = _getPreviewEl();
-            if (previewEl) previewEl.innerHTML = `<div style="color:#dc2626;">${escapeHtml(e?.message || String(e))}</div>`;
-        }
-    },
-
-    removeAt(index) {
-        const subs = this.getSubscriptions();
-        if (index < 0 || index >= subs.length) return;
-        try {
-            const sid = String(subs[index]?.source_id || subs[index]?.rss_source_id || '').trim();
-            if (sid) _pendingSyncBySourceId.delete(sid);
-        } catch (e) {
-            // ignore
-        }
-        subs.splice(index, 1);
-        this.setSubscriptions(subs);
-        _renderList();
-    },
-
-    async saveOnly() {
-        try {
-            const prev = Array.isArray(_subsSnapshot) ? _subsSnapshot : [];
-            const next = this.getSubscriptions();
-
-            const changed = _subsKey(prev) !== _subsKey(next);
-            const newIdsForGate = _diffNewSourceIds(prev, next);
-            const allNewOk = newIdsForGate.every((sid) => {
-                const st = _previewStatusBySourceId.get(sid);
-                return !!st && st.ok === true && Number(st.entries_count || 0) > 0;
-            });
-            if (!changed) {
-                _setSaveStatus('请先通过预览加入至少一个订阅，再保存', { variant: 'info' });
-                _updateRssGatingUI();
-                return;
-            }
-            if (!allNewOk) {
-                _setSaveStatus('新增订阅需要先预览且必须有条目（entries>0）', { variant: 'info' });
-                _updateRssGatingUI();
-                return;
-            }
-
-            let savedNext = next;
-            try {
-                const resp = await fetch('/api/me/rss-subscriptions', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subscriptions: _normalizeSubsForServer(next) })
-                });
-                if (resp.status === 403) {
-                    _serverChecked = true;
-                    _serverEnabled = false;
-                    try { _syncServerEnabledFlag(); } catch (e) { /* ignore */ }
-                    _setSaveStatus('未开启服务端同步（Not allowlisted），已保存到本地订阅', { variant: 'info' });
-                } else {
-                    const payload = await resp.json().catch(() => ({}));
-                    if (!resp.ok) throw new Error(payload?.detail || 'Save failed');
-                    savedNext = _normalizeSubsForServer(payload?.subscriptions);
-                    _serverChecked = true;
-                    _serverEnabled = true;
-                    try { _syncServerEnabledFlag(); } catch (e) { /* ignore */ }
-                    this.setSubscriptions(savedNext);
-                }
-            } catch (e) {
-                _setSaveStatus(`服务端保存失败，已使用本地订阅：${String(e?.message || e)}`, { variant: 'info' });
-            }
-
-            const prevSet = new Set(prev.map((s) => String(s?.source_id || s?.rss_source_id || '').trim()).filter(Boolean));
-            const newIds = savedNext
-                .map((s) => String(s?.source_id || s?.rss_source_id || '').trim())
-                .filter((sid) => !!sid && !prevSet.has(sid));
-
-            if (newIds.length > 0) {
-                _setPendingSync(newIds, true);
-                _renderList();
-            }
-            if (newIds.length > 0) {
-                try {
-                    await fetch('/api/rss-sources/warmup?wait_ms=0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ source_ids: newIds, priority: 'high' })
-                    });
-                } catch (e) {
-                    // ignore
-                }
-            }
-
-            try {
-                _subsSnapshot = this.getSubscriptions();
-            } catch (e) {
-                _subsSnapshot = null;
-            }
-            _renderList();
-            _updateRssGatingUI();
-        } catch (e) {
-            console.error('rss save error:', e);
-            try {
-                _setSaveStatus(String(e?.message || e), { variant: 'error' });
-            } catch (_) {}
-        }
-    },
-
-    async saveAndRefresh() {
-        try {
-            const prev = Array.isArray(_subsSnapshot) ? _subsSnapshot : [];
-            const next = this.getSubscriptions();
-
-            const changed = _subsKey(prev) !== _subsKey(next);
-            const newIdsForGate = _diffNewSourceIds(prev, next);
-            const allNewOk = newIdsForGate.every((sid) => {
-                const st = _previewStatusBySourceId.get(sid);
-                return !!st && st.ok === true && Number(st.entries_count || 0) > 0;
-            });
-            if (!changed) {
-                _setSaveStatus('请先通过预览加入至少一个订阅，再保存并刷新', { variant: 'info' });
-                _updateRssGatingUI();
-                return;
-            }
-            if (!allNewOk) {
-                _setSaveStatus('新增订阅需要先预览且必须有条目（entries>0）', { variant: 'info' });
-                _updateRssGatingUI();
-                return;
-            }
-
-            let savedNext = next;
-            try {
-                const resp = await fetch('/api/me/rss-subscriptions', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subscriptions: _normalizeSubsForServer(next) })
-                });
-                if (resp.status === 403) {
-                    _serverChecked = true;
-                    _serverEnabled = false;
-                    try { _syncServerEnabledFlag(); } catch (e) { /* ignore */ }
-                    _setSaveStatus('未开启服务端同步（Not allowlisted），已保存到本地订阅', { variant: 'info' });
-                } else {
-                    const payload = await resp.json().catch(() => ({}));
-                    if (!resp.ok) throw new Error(payload?.detail || 'Save failed');
-                    savedNext = _normalizeSubsForServer(payload?.subscriptions);
-                    _serverChecked = true;
-                    _serverEnabled = true;
-                    try { _syncServerEnabledFlag(); } catch (e) { /* ignore */ }
-                    this.setSubscriptions(savedNext);
-                }
-            } catch (e) {
-                // If server save fails (network/500), keep local behavior.
-                _setSaveStatus(`服务端保存失败，已使用本地订阅：${String(e?.message || e)}`, { variant: 'info' });
-            }
-
-            const prevSet = new Set(prev.map((s) => String(s?.source_id || s?.rss_source_id || '').trim()).filter(Boolean));
-            const newIds = savedNext
-                .map((s) => String(s?.source_id || s?.rss_source_id || '').trim())
-                .filter((sid) => !!sid && !prevSet.has(sid));
-
-            if (newIds.length > 0) {
-                _setPendingSync(newIds, true);
-                _renderList();
-            }
-            if (newIds.length > 0) {
-                try {
-                    await fetch('/api/rss-sources/warmup?wait_ms=0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ source_ids: newIds, priority: 'high' })
-                    });
-                } catch (e) {
-                    // ignore
-                }
-            }
-
-            // Mode A: keep modal open while waiting; show status in modal.
-            _setSaveStatus('正在从源获取最新内容...', { variant: 'info' });
-            try {
-                const btn = document.querySelector('#rssSubscriptionModal .settings-btn-primary');
-                if (btn) btn.setAttribute('disabled', 'true');
-            } catch (e) {
-                // ignore
-            }
-
-            const startedAt = Date.now();
-            const deadlineMs = 5000;
-            const delays = [0, 300, 700, 1500, 2500];
-            let found = false;
-            for (const d of delays) {
-                const elapsed = Date.now() - startedAt;
-                const remaining = deadlineMs - elapsed;
-                if (remaining <= 0) break;
-                if (d > 0) {
-                    await _sleep(Math.min(d, remaining));
-                }
-                await TR.data.refreshViewerData({ preserveScroll: true });
-
-                if (newIds.length > 0) {
-                    const stillPending = [];
-                    for (const sid of newIds) {
-                        if (_pendingSyncBySourceId.has(sid) && _hasRssPlatformNews([sid])) {
-                            _pendingSyncBySourceId.delete(sid);
-                        }
-                        if (_pendingSyncBySourceId.has(sid)) {
-                            stillPending.push(sid);
-                        }
-                    }
-                    if (stillPending.length === 0) {
-                        found = true;
-                        _renderList();
-                        break;
-                    }
-                    _renderList();
-                }
-                if (newIds.length === 0) {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (found) {
-                _setSaveStatus('已获取到内容，即将返回…', { variant: 'success' });
-            } else {
-                if (newIds.length > 0) {
-                    _setPendingSync(newIds, false);
-                    _renderList();
-                }
-                _setSaveStatus('已订阅，内容稍后更新', { variant: 'info' });
-            }
-
-            try {
-                const btn = document.querySelector('#rssSubscriptionModal .settings-btn-primary');
-                if (btn) btn.removeAttribute('disabled');
-            } catch (e) {
-                // ignore
-            }
-
-            await _sleep(found ? 200 : 800);
-            this.close();
-        } catch (e) {
-            console.error('rss refresh error:', e);
-            try {
-                _setSaveStatus(String(e?.message || e), { variant: 'error' });
-            } catch (_) {}
-            try {
-                const btn = document.querySelector('#rssSubscriptionModal .settings-btn-primary');
-                if (btn) btn.removeAttribute('disabled');
-            } catch (_) {}
-        }
-    }
-};
-
-async function submitSourceRequest() {
-    const url = _getInputValue('rssRequestUrl');
-    const title = _getInputValue('rssRequestTitle');
-    const note = _getInputValue('rssRequestNote');
-    if (!url) {
-        alert('请输入 URL');
-        return;
-    }
-    if (!title) {
-        alert('请输入 标题');
-        return;
-    }
-    if (!note) {
-        alert('请输入 备注');
-        return;
-    }
-    const previewEl = _getPreviewEl();
-    if (previewEl) previewEl.innerHTML = '<div style="color:#6b7280;">提交申请中...</div>';
+/**
+ * Load subscription plans
+ */
+async function loadSubscriptionPlans() {
+    const section = document.getElementById('subscriptionPlansSection');
+    const hintEl = document.getElementById('subscriptionStatusHint');
+    
     try {
-        const resp = await fetch('/api/rss-source-requests', {
+        const [plansRes, statusRes] = await Promise.all([
+            fetch('/api/subscription/plans'),
+            fetch('/api/subscription/status', { credentials: 'include' })
+        ]);
+        
+        const plansData = await plansRes.json();
+        const statusData = await statusRes.json();
+        
+        // Update status hint
+        if (hintEl) {
+            if (statusData.is_vip) {
+                const expireDate = new Date(statusData.expire_at * 1000);
+                hintEl.innerHTML = `<span class="vip-badge">VIP</span> 到期: ${expireDate.toLocaleDateString('zh-CN')} · 剩余 ${statusData.usage_remaining} 次`;
+            } else {
+                hintEl.textContent = `Token余额: ${formatNumber(statusData.token_balance || 0)}`;
+            }
+        }
+        
+        const plans = plansData.plans || [];
+        if (plans.length === 0) {
+            section.innerHTML = '<div class="subscription-loading">暂无可用套餐</div>';
+            return;
+        }
+        
+        section.innerHTML = `
+            <div class="subscription-plans-grid">
+                ${plans.map((plan, idx) => renderSubscriptionPlanCard(plan, idx === 1)).join('')}
+            </div>
+            <div class="subscription-benefits">
+                <div class="subscription-benefit">✓ AI 智能总结</div>
+                <div class="subscription-benefit">✓ 文章分类标签</div>
+                <div class="subscription-benefit">✓ 优先技术支持</div>
+            </div>
+        `;
+        
+    } catch (err) {
+        console.error('Load subscription plans error:', err);
+        section.innerHTML = `
+            <div class="subscription-error">
+                <div>加载失败</div>
+                <button onclick="loadSubscriptionPlans()">重试</button>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Render subscription plan card
+ */
+function renderSubscriptionPlanCard(plan, isRecommended = false) {
+    const badge = plan.badge ? `<div class="subscription-plan-badge">${plan.badge}</div>` : '';
+    
+    return `
+        <div class="subscription-plan-card ${isRecommended ? 'recommended' : ''}" 
+             data-plan-id="${plan.id}"
+             onclick="selectSubscriptionPlan(${plan.id})">
+            ${badge}
+            <div class="subscription-plan-name">${plan.name}</div>
+            <div class="subscription-plan-price">
+                <span class="subscription-plan-currency">¥</span>
+                <span class="subscription-plan-amount">${plan.price}</span>
+                <span class="subscription-plan-period">/${plan.plan_type === 'yearly' ? '年' : '月'}</span>
+            </div>
+            <div class="subscription-plan-quota">${plan.usage_quota} 次/周期</div>
+            <div class="subscription-plan-duration">${plan.duration_days} 天有效期</div>
+        </div>
+    `;
+}
+
+/**
+ * Select subscription plan and create order
+ */
+async function selectSubscriptionPlan(planId) {
+    const plansSection = document.getElementById('subscriptionPlansSection');
+    const qrSection = document.getElementById('subscriptionQRSection');
+    const statusEl = document.getElementById('subscriptionStatus');
+    
+    plansSection.style.display = 'none';
+    qrSection.style.display = 'block';
+    statusEl.textContent = '正在创建订单...';
+    statusEl.className = 'subscription-status';
+    
+    try {
+        const res = await fetch('/api/subscription/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, title, note })
+            credentials: 'include',
+            body: JSON.stringify({ plan_id: planId })
         });
-        const payload = await resp.json();
-        if (!resp.ok) throw new Error(payload?.detail || 'Submit failed');
-        if (previewEl) previewEl.innerHTML = `<div style="color:#16a34a;">已提交申请，状态：${escapeHtml(payload?.status || 'pending')}</div>`;
-        _setInputValue('rssRequestUrl', '');
-        _setInputValue('rssRequestTitle', '');
-        _setInputValue('rssRequestNote', '');
-    } catch (e) {
-        if (previewEl) previewEl.innerHTML = `<div style="color:#dc2626;">${escapeHtml(e?.message || String(e))}</div>`;
+        
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || err.detail || '创建订单失败');
+        }
+        
+        const order = await res.json();
+        currentOrderNo = order.order_no;
+        
+        document.getElementById('subscriptionOrderAmount').textContent = order.amount;
+        document.getElementById('subscriptionOrderPlan').textContent = order.plan_name;
+        
+        await generateSubscriptionQRCode(order.code_url);
+        
+        statusEl.textContent = '等待支付...';
+        startPolling();
+        startCountdown();
+        
+    } catch (err) {
+        console.error('Create subscription order error:', err);
+        statusEl.textContent = err.message || '创建订单失败';
+        statusEl.className = 'subscription-status error';
     }
 }
 
-function toggleRequestSection() {
-    const sec = _getRequestSectionEl();
-    if (!sec) return;
-    const visible = sec.style.display !== 'none';
-    sec.style.display = visible ? 'none' : 'block';
-}
-
-window.openRssSubscriptionModal = () => {
+/**
+ * Generate QR code for subscription
+ */
+async function generateSubscriptionQRCode(codeUrl) {
+    const container = document.getElementById('subscriptionQRCode');
+    container.innerHTML = '';
+    
     try {
-        const badge = document.getElementById('rssSubscriptionNewBadge');
-        if (badge) {
-            badge.style.display = 'none';
-            localStorage.setItem('rss_subscription_badge_dismissed', 'true');
-        }
-    } catch (e) {
-        // ignore
+        await loadQRCodeLib();
+        new QRCode(container, {
+            text: codeUrl,
+            width: 200,
+            height: 200,
+            colorDark: '#1d1d1f',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.M
+        });
+    } catch (err) {
+        console.error('QR code error:', err);
+        container.innerHTML = '<div class="subscription-qr-error">二维码生成失败</div>';
     }
-    subscription.open();
-};
-window.closeRssSubscriptionModal = () => subscription.close();
-window.previewRssSubscription = () => subscription.previewCurrent();
-window.saveRssSubscriptions = () => subscription.saveAndRefresh();
-window.removeRssSubscription = (idx) => subscription.removeAt(parseInt(idx, 10));
-window.submitRssSourceRequest = () => submitSourceRequest();
-window.toggleRssRequestSection = () => toggleRequestSection();
-window.openRssSourcePicker = () => openPicker();
-window.closeRssSourcePicker = () => closePicker();
-
-TR.subscription = subscription;
-
-TR.subscription._serverEnabled = _serverEnabled;
-
-function _syncServerEnabledFlag() {
-    try { TR.subscription._serverEnabled = !!_serverEnabled; } catch (e) { /* ignore */ }
 }
 
-ready(function() {
-    const modal = _getModalEl();
+/**
+ * Show plans section
+ */
+function showSubscriptionPlans() {
+    stopPolling();
+    stopCountdown();
+    currentOrderNo = null;
+    
+    document.getElementById('subscriptionPlansSection').style.display = 'block';
+    document.getElementById('subscriptionQRSection').style.display = 'none';
+    document.getElementById('subscriptionSuccessSection').style.display = 'none';
+}
 
-    if (modal) {
-        const feedTitleInput = document.getElementById('rssFeedTitle');
-        if (feedTitleInput) {
-            feedTitleInput.addEventListener('input', () => {
-                const v = String(feedTitleInput.value || '').trim();
-                _rssFeedTitleUserEdited = v !== '';
-                _rssFeedTitleAutoFilled = false;
-            });
+/**
+ * Start polling for payment status
+ */
+function startPolling() {
+    stopPolling();
+    
+    let attempts = 0;
+    const maxAttempts = 600;
+    
+    pollTimer = setInterval(async () => {
+        if (!currentOrderNo) {
+            stopPolling();
+            return;
         }
-
-        modal.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                subscription.close();
+        
+        attempts++;
+        if (attempts > maxAttempts) {
+            stopPolling();
+            const statusEl = document.getElementById('subscriptionStatus');
+            statusEl.textContent = '订单已超时，请重新下单';
+            statusEl.className = 'subscription-status error';
+            return;
+        }
+        
+        try {
+            const res = await fetch(`/api/payment/status?order_no=${currentOrderNo}`);
+            const data = await res.json();
+            
+            if (data.status === 'paid') {
+                stopPolling();
+                showSubscriptionSuccess();
+            } else if (data.status === 'expired') {
+                stopPolling();
+                const statusEl = document.getElementById('subscriptionStatus');
+                statusEl.textContent = '订单已过期，请重新下单';
+                statusEl.className = 'subscription-status error';
             }
-        });
+        } catch (err) {
+            console.error('Poll status error:', err);
+        }
+    }, 1000);
+}
+
+function stopPolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
     }
+}
 
-    const picker = _getPickerModalEl();
-    if (picker) {
-        picker.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closePicker();
-            }
-        });
+function startCountdown() {
+    stopCountdown();
+    countdownSeconds = QR_VALIDITY_SECONDS;
+    updateCountdownDisplay();
+    
+    countdownTimer = setInterval(() => {
+        countdownSeconds--;
+        updateCountdownDisplay();
+        
+        if (countdownSeconds <= 0) {
+            stopCountdown();
+        }
+    }, 1000);
+}
+
+function stopCountdown() {
+    if (countdownTimer) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
     }
+}
 
-    const results = _getResultsEl();
-    if (results) {
-        results.addEventListener('scroll', () => {
-            _schedulePickerRender();
-        });
+function updateCountdownDisplay() {
+    const el = document.getElementById('subCountdownTime');
+    if (!el) return;
+    
+    const minutes = Math.floor(countdownSeconds / 60);
+    const seconds = countdownSeconds % 60;
+    el.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function showSubscriptionSuccess() {
+    stopCountdown();
+    document.getElementById('subscriptionPlansSection').style.display = 'none';
+    document.getElementById('subscriptionQRSection').style.display = 'none';
+    document.getElementById('subscriptionSuccessSection').style.display = 'flex';
+    
+    window.dispatchEvent(new CustomEvent('subscription-success'));
+}
+
+async function manualCheckSubscription() {
+    if (!currentOrderNo) return;
+    
+    const statusEl = document.getElementById('subscriptionStatus');
+    statusEl.textContent = '正在查询...';
+    
+    try {
+        const res = await fetch(`/api/payment/status?order_no=${currentOrderNo}`);
+        const data = await res.json();
+        
+        if (data.status === 'paid') {
+            stopPolling();
+            showSubscriptionSuccess();
+        } else {
+            statusEl.textContent = '尚未支付，请完成支付后再试';
+        }
+    } catch (err) {
+        statusEl.textContent = '查询失败，请稍后再试';
+        statusEl.className = 'subscription-status error';
     }
+}
 
-    const input = _getSearchInputEl();
-    if (input) {
-        input.addEventListener('input', () => {
-            const next = String(input.value || '').trim();
-            _pickerQuery = next;
-            if (_pickerDebounceTimer) {
-                window.clearTimeout(_pickerDebounceTimer);
-                _pickerDebounceTimer = 0;
-            }
-            _pickerDebounceTimer = window.setTimeout(() => {
-                _pickerDebounceTimer = 0;
-                _startSearch({ reset: true });
-            }, 250);
-        });
-    }
+function formatNumber(num) {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(0) + 'K';
+    return num.toString();
+}
 
-    _syncServerEnabledFlag();
+/**
+ * Ensure subscription modal styles
+ */
+function ensureSubscriptionStyles() {
+    if (document.getElementById('subscription-modal-styles')) return;
+    
+    const style = document.createElement('style');
+    style.id = 'subscription-modal-styles';
+    style.textContent = `
+        .subscription-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 10000;
+        }
+        .subscription-modal.open {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .subscription-modal-backdrop {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+        }
+        .subscription-modal-content {
+            position: relative;
+            background: #1e293b;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 420px;
+            max-height: 80vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        .subscription-modal-close {
+            position: absolute;
+            top: 12px; right: 12px;
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 4px 8px;
+            line-height: 1;
+            z-index: 1;
+        }
+        .subscription-modal-close:hover { color: #f1f5f9; }
+        .subscription-modal-header {
+            padding: 20px 24px 16px;
+            border-bottom: 1px solid #334155;
+            text-align: center;
+        }
+        .subscription-modal-header h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+        .subscription-status-hint {
+            margin: 8px 0 0;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        .vip-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #f59e0b, #ef4444);
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 6px;
+        }
+        .subscription-modal-body {
+            padding: 20px 24px;
+            overflow-y: auto;
+        }
+        .subscription-plans-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .subscription-plan-card {
+            position: relative;
+            background: #0f172a;
+            border: 2px solid #334155;
+            border-radius: 12px;
+            padding: 20px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .subscription-plan-card:hover {
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+        }
+        .subscription-plan-card.recommended {
+            border-color: #f59e0b;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(239, 68, 68, 0.1));
+        }
+        .subscription-plan-badge {
+            position: absolute;
+            top: -10px;
+            right: 10px;
+            background: linear-gradient(135deg, #f59e0b, #ef4444);
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+        }
+        .subscription-plan-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 12px;
+        }
+        .subscription-plan-price {
+            margin-bottom: 8px;
+        }
+        .subscription-plan-currency {
+            font-size: 16px;
+            color: #94a3b8;
+        }
+        .subscription-plan-amount {
+            font-size: 32px;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+        .subscription-plan-period {
+            font-size: 14px;
+            color: #64748b;
+        }
+        .subscription-plan-quota {
+            font-size: 13px;
+            color: #3b82f6;
+            margin-bottom: 4px;
+        }
+        .subscription-plan-duration {
+            font-size: 12px;
+            color: #64748b;
+        }
+        .subscription-benefits {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 8px;
+        }
+        .subscription-benefit {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        /* QR Section */
+        .subscription-qr-section { text-align: center; }
+        .subscription-qr-back {
+            text-align: left;
+            margin-bottom: 16px;
+        }
+        .subscription-qr-back span {
+            color: #3b82f6;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .subscription-qr-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            display: inline-block;
+            margin-bottom: 16px;
+        }
+        .subscription-qr-code {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto;
+        }
+        .subscription-qr-hint {
+            margin-top: 12px;
+            font-size: 13px;
+            color: #64748b;
+        }
+        .subscription-countdown {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        .subscription-order-info {
+            margin-bottom: 16px;
+        }
+        .subscription-order-amount {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+        .subscription-order-plan {
+            font-size: 14px;
+            color: #94a3b8;
+        }
+        .subscription-status {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 12px;
+        }
+        .subscription-status.error { color: #ef4444; }
+        .subscription-refresh-hint {
+            font-size: 13px;
+            color: #64748b;
+        }
+        .subscription-refresh-hint a {
+            color: #3b82f6;
+            text-decoration: none;
+        }
+        /* Success Section */
+        .subscription-success-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        .subscription-success-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+        .subscription-success-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #f1f5f9;
+            margin-bottom: 8px;
+        }
+        .subscription-success-desc {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 24px;
+        }
+        .subscription-success-btn {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 32px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .subscription-loading, .subscription-error {
+            text-align: center;
+            padding: 32px;
+            color: #64748b;
+        }
+        .subscription-error button {
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+    `;
+    document.head.appendChild(style);
+}
 
-    // Attempt server-authoritative subscriptions on page load (allowlisted users).
-    _syncSubscriptionsFromServer({ showHintOn403: false }).catch(() => {});
-});
+// Expose to window
+window.openSubscriptionModal = openSubscriptionModal;
+window.closeSubscriptionModal = closeSubscriptionModal;
+window.selectSubscriptionPlan = selectSubscriptionPlan;
+window.showSubscriptionPlans = showSubscriptionPlans;
+window.manualCheckSubscription = manualCheckSubscription;
+window.loadSubscriptionPlans = loadSubscriptionPlans;

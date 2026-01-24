@@ -45,7 +45,7 @@ def is_wechat_pay_configured() -> bool:
 def init_payment_tables(conn):
     """Initialize payment-related database tables."""
     
-    # Recharge plans table
+    # Recharge plans table (Token充值套餐)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS recharge_plans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,12 +75,15 @@ def init_payment_tables(conn):
             code_url TEXT,
             expire_at INTEGER NOT NULL,
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            order_type TEXT DEFAULT 'token',
+            subscription_plan_id INTEGER
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_user ON payment_orders(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_status ON payment_orders(status)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_order_no ON payment_orders(order_no)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_payment_orders_type ON payment_orders(order_type)")
     
     # Token recharge logs table
     conn.execute("""
@@ -111,7 +114,48 @@ def init_payment_tables(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_token_usage_user ON token_usage_logs(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_token_usage_created ON token_usage_logs(created_at DESC)")
     
-    # Insert default plans if not exist
+    # ============================================
+    # Subscription tables (订阅制)
+    # ============================================
+    
+    # Subscription plans table (订阅套餐)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS subscription_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            plan_type TEXT NOT NULL,
+            price_cents INTEGER NOT NULL,
+            duration_days INTEGER NOT NULL,
+            usage_quota INTEGER NOT NULL,
+            badge TEXT,
+            is_active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_plans_active ON subscription_plans(is_active)")
+    
+    # User subscriptions table (用户订阅状态)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            plan_type TEXT NOT NULL DEFAULT 'free',
+            start_at INTEGER,
+            expire_at INTEGER,
+            usage_quota INTEGER DEFAULT 0,
+            usage_used INTEGER DEFAULT 0,
+            last_reset_at INTEGER,
+            auto_renew INTEGER DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_sub_user ON user_subscriptions(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_sub_expire ON user_subscriptions(expire_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_user_sub_type ON user_subscriptions(plan_type)")
+    
+    # Insert default token recharge plans if not exist
     cur = conn.execute("SELECT COUNT(*) FROM recharge_plans")
     if cur.fetchone()[0] == 0:
         now = int(time.time())
@@ -122,6 +166,27 @@ def init_payment_tables(conn):
                 ('标准版', 2900, 2000000, 365, 2, ?),
                 ('专业版', 9900, 7500000, 365, 3, ?)
         """, (now, now, now))
+    
+    # Insert default subscription plans if not exist
+    cur = conn.execute("SELECT COUNT(*) FROM subscription_plans")
+    if cur.fetchone()[0] == 0:
+        now = int(time.time())
+        conn.execute("""
+            INSERT INTO subscription_plans (name, plan_type, price_cents, duration_days, usage_quota, badge, sort_order, created_at)
+            VALUES 
+                ('月度会员', 'monthly', 1990, 30, 150, NULL, 1, ?),
+                ('年度会员', 'yearly', 15900, 365, 1800, '省33%', 2, ?)
+        """, (now, now))
+    
+    # Try to add new columns to existing payment_orders table (for migration)
+    try:
+        conn.execute("ALTER TABLE payment_orders ADD COLUMN order_type TEXT DEFAULT 'token'")
+    except:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE payment_orders ADD COLUMN subscription_plan_id INTEGER")
+    except:
+        pass  # Column already exists
     
     conn.commit()
 
@@ -216,7 +281,8 @@ def get_order_by_no(conn, order_no: str) -> Optional[Dict[str, Any]]:
     """Get order by order number."""
     cur = conn.execute("""
         SELECT id, order_no, user_id, plan_id, amount_cents, tokens, status, 
-               wx_prepay_id, wx_transaction_id, wx_pay_time, code_url, expire_at, created_at
+               wx_prepay_id, wx_transaction_id, wx_pay_time, code_url, expire_at, created_at,
+               order_type, subscription_plan_id
         FROM payment_orders
         WHERE order_no = ?
     """, (order_no,))
@@ -239,6 +305,8 @@ def get_order_by_no(conn, order_no: str) -> Optional[Dict[str, Any]]:
         "code_url": row[10],
         "expire_at": row[11],
         "created_at": row[12],
+        "order_type": row[13] or "token",
+        "subscription_plan_id": row[14],
     }
 
 
@@ -627,6 +695,7 @@ async def handle_payment_callback(
 ) -> Tuple[bool, str]:
     """
     Handle successful payment callback.
+    Supports both token recharge and subscription orders.
     Returns (success, message)
     """
     try:
@@ -659,7 +728,6 @@ async def handle_payment_callback(
         pay_time = int(time.time())
         success_time = decrypted_data.get("success_time")
         if success_time:
-            # Parse ISO 8601 format
             from datetime import datetime
             try:
                 dt = datetime.fromisoformat(success_time.replace("Z", "+00:00"))
@@ -671,21 +739,58 @@ async def handle_payment_callback(
         if not updated:
             return True, "订单状态未变更"
         
-        # Add tokens to user
-        plan = get_plan_by_id(conn, order["plan_id"])
-        validity_days = plan["validity_days"] if plan else 365
+        # 根据订单类型处理
+        order_type = order.get("order_type", "token")
         
-        add_tokens_to_user(
-            conn,
-            order["user_id"],
-            order["id"],
-            order["tokens"],
-            validity_days
-        )
-        
-        logger.info(f"Payment success: order={order_no}, user={order['user_id']}, tokens={order['tokens']}")
-        return True, "处理成功"
+        if order_type == "subscription":
+            # 订阅订单：激活用户订阅
+            return await _handle_subscription_callback(conn, order)
+        else:
+            # Token充值订单：添加Token
+            return await _handle_token_callback(conn, order)
         
     except Exception as e:
         logger.exception(f"Handle callback error: {e}")
         return False, f"处理失败: {str(e)}"
+
+
+async def _handle_token_callback(conn, order: Dict[str, Any]) -> Tuple[bool, str]:
+    """处理Token充值订单回调"""
+    plan = get_plan_by_id(conn, order["plan_id"])
+    validity_days = plan["validity_days"] if plan else 365
+    
+    add_tokens_to_user(
+        conn,
+        order["user_id"],
+        order["id"],
+        order["tokens"],
+        validity_days
+    )
+    
+    logger.info(f"Token payment success: order={order['order_no']}, user={order['user_id']}, tokens={order['tokens']}")
+    return True, "处理成功"
+
+
+async def _handle_subscription_callback(conn, order: Dict[str, Any]) -> Tuple[bool, str]:
+    """处理订阅订单回调"""
+    from .subscription_service import get_subscription_plan_by_id, create_or_update_subscription
+    
+    # 获取订阅套餐信息
+    plan_id = order.get("subscription_plan_id") or order.get("plan_id")
+    plan = get_subscription_plan_by_id(conn, plan_id)
+    
+    if not plan:
+        logger.error(f"Subscription plan not found: plan_id={plan_id}")
+        return False, "订阅套餐不存在"
+    
+    # 激活用户订阅
+    create_or_update_subscription(
+        conn,
+        order["user_id"],
+        plan["plan_type"],
+        plan["duration_days"],
+        plan["usage_quota"]
+    )
+    
+    logger.info(f"Subscription payment success: order={order['order_no']}, user={order['user_id']}, plan={plan['name']}")
+    return True, "处理成功"
