@@ -46,6 +46,82 @@ def _get_current_user_id(request: Request) -> Optional[int]:
     return user_info.get("id")
 
 
+@router.get("/all")
+async def get_all_sources(
+    request: Request,
+    limit: int = Query(500, description="Max results")
+):
+    """
+    Get all available RSS sources and custom sources.
+    Returns all enabled sources for browsing.
+    """
+    online_conn = _get_online_db_conn(request)
+    user_id = _get_current_user_id(request)
+    
+    # Get user's subscribed sources
+    subscribed_set = set()
+    if user_id:
+        user_conn = _get_user_db_conn(request)
+        cur = user_conn.execute(
+            "SELECT source_id FROM user_rss_subscriptions WHERE user_id = ?",
+            (user_id,)
+        )
+        for row in cur.fetchall():
+            subscribed_set.add(str(row[0]).strip())
+    
+    sources = []
+    
+    # Get RSS sources
+    try:
+        cur = online_conn.execute("""
+            SELECT id, name, url, category
+            FROM rss_sources
+            WHERE enabled = 1
+            ORDER BY name
+            LIMIT ?
+        """, (limit,))
+        
+        for row in cur.fetchall():
+            source_id = str(row[0]).strip()
+            sources.append({
+                "id": source_id,
+                "type": "rss",
+                "name": str(row[1] or "").strip() or source_id,
+                "url": str(row[2] or "").strip(),
+                "category": str(row[3] or "").strip(),
+                "is_subscribed": source_id in subscribed_set,
+            })
+    except Exception as e:
+        print(f"[SourceAPI] Get RSS sources error: {e}")
+    
+    # Get custom sources
+    try:
+        cur = online_conn.execute("""
+            SELECT id, name
+            FROM custom_sources
+            WHERE enabled = 1
+            ORDER BY name
+            LIMIT ?
+        """, (limit,))
+        
+        for row in cur.fetchall():
+            source_id = str(row[0]).strip()
+            name = str(row[1] or "").strip()
+            
+            sources.append({
+                "id": source_id,
+                "type": "custom",
+                "name": name or source_id,
+                "url": "",
+                "category": "自定义",
+                "is_subscribed": source_id in subscribed_set,
+            })
+    except Exception as e:
+        print(f"[SourceAPI] Get custom sources error: {e}")
+    
+    return {"ok": True, "sources": sources}
+
+
 @router.get("/search")
 async def search_sources(
     request: Request,
@@ -144,12 +220,21 @@ async def preview_source(request: Request, source_id: str, limit: int = Query(10
     MAX_TIMESTAMP = int(time_module.time()) + (7 * 24 * 60 * 60)
     
     try:
-        # Get source info
+        # Try RSS sources first
         src_cur = online_conn.execute(
             "SELECT name, url, category FROM rss_sources WHERE id = ?",
             (source_id,)
         )
         src_row = src_cur.fetchone()
+        
+        # If not found in rss_sources, try custom_sources
+        if not src_row:
+            src_cur = online_conn.execute(
+                "SELECT name, '', '自定义' FROM custom_sources WHERE id = ?",
+                (source_id,)
+            )
+            src_row = src_cur.fetchone()
+        
         if not src_row:
             return {"ok": False, "error": "Source not found"}
         
