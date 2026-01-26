@@ -68,9 +68,13 @@ def get_subscription_plan_by_id(conn, plan_id: int) -> Optional[Dict[str, Any]]:
 # User Subscription Management
 # ============================================
 
+# 免费用户每月赠送次数
+FREE_MONTHLY_QUOTA = 50
+
+
 def ensure_user_subscription(conn, user_id: int) -> bool:
     """
-    确保用户有订阅记录（默认免费）
+    确保用户有订阅记录（默认免费，赠送50次/月）
     Returns True if created, False if already exists.
     """
     cur = conn.execute(
@@ -82,9 +86,9 @@ def ensure_user_subscription(conn, user_id: int) -> bool:
     
     now = int(time.time())
     conn.execute("""
-        INSERT INTO user_subscriptions (user_id, plan_type, created_at, updated_at)
-        VALUES (?, 'free', ?, ?)
-    """, (user_id, now, now))
+        INSERT INTO user_subscriptions (user_id, plan_type, usage_quota, usage_used, last_reset_at, created_at, updated_at)
+        VALUES (?, 'free', ?, 0, ?, ?, ?)
+    """, (user_id, FREE_MONTHLY_QUOTA, now, now, now))
     conn.commit()
     return True
 
@@ -191,26 +195,32 @@ def create_or_update_subscription(
 
 def check_and_reset_monthly_quota(conn, user_id: int) -> bool:
     """
-    检查并重置月付用户的月度配额
-    月付用户每30天重置一次使用次数
+    检查并重置用户的月度配额（适用于所有用户）
+    每30天重置一次使用次数
     Returns True if reset, False otherwise.
     """
     sub = get_user_subscription(conn, user_id)
-    if not sub or sub['plan_type'] != 'monthly' or not sub['is_vip']:
+    if not sub:
         return False
     
     now = int(time.time())
-    last_reset = sub['last_reset_at'] or sub['start_at'] or now
+    last_reset = sub['last_reset_at'] or sub['start_at'] or sub['created_at'] or now
     
     # 检查是否已过30天
     if now - last_reset >= 30 * 86400:
+        # 根据用户类型设置配额
+        if sub['is_vip']:
+            new_quota = sub['usage_quota']  # VIP保持原配额
+        else:
+            new_quota = FREE_MONTHLY_QUOTA  # 免费用户重置为50次
+        
         conn.execute("""
             UPDATE user_subscriptions
-            SET usage_used = 0, last_reset_at = ?, updated_at = ?
+            SET usage_used = 0, usage_quota = ?, last_reset_at = ?, updated_at = ?
             WHERE user_id = ?
-        """, (now, now, user_id))
+        """, (new_quota, now, now, user_id))
         conn.commit()
-        logger.info(f"[Subscription] Monthly quota reset: user={user_id}")
+        logger.info(f"[Subscription] Monthly quota reset: user={user_id}, quota={new_quota}")
         return True
     
     return False
@@ -218,14 +228,14 @@ def check_and_reset_monthly_quota(conn, user_id: int) -> bool:
 
 def consume_usage_quota(conn, user_id: int) -> bool:
     """
-    消耗一次使用配额
+    消耗一次使用配额（适用于所有用户）
     Returns True if successful, False if no quota remaining.
     """
     # 先检查是否需要重置月度配额
     check_and_reset_monthly_quota(conn, user_id)
     
     sub = get_user_subscription(conn, user_id)
-    if not sub or not sub['is_vip']:
+    if not sub:
         return False
     
     if sub['usage_remaining'] <= 0:
@@ -251,6 +261,9 @@ def get_subscription_status(conn, user_id: int, token_balance: int = 0) -> Dict[
     # 确保用户有订阅记录
     ensure_user_subscription(conn, user_id)
     
+    # 检查是否需要重置月度配额
+    check_and_reset_monthly_quota(conn, user_id)
+    
     sub = get_user_subscription(conn, user_id)
     if not sub:
         return {
@@ -258,10 +271,9 @@ def get_subscription_status(conn, user_id: int, token_balance: int = 0) -> Dict[
             "is_vip": False,
             "expire_at": None,
             "days_remaining": None,
-            "usage_quota": 0,
+            "usage_quota": FREE_MONTHLY_QUOTA,
             "usage_used": 0,
-            "usage_remaining": 0,
-            "token_balance": token_balance,
+            "usage_remaining": FREE_MONTHLY_QUOTA,
         }
     
     return {
@@ -272,5 +284,4 @@ def get_subscription_status(conn, user_id: int, token_balance: int = 0) -> Dict[
         "usage_quota": sub['usage_quota'],
         "usage_used": sub['usage_used'],
         "usage_remaining": sub['usage_remaining'],
-        "token_balance": token_balance,
     }

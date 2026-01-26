@@ -24,7 +24,6 @@ from .payment_api import (
     get_wechat_pay_config,
     is_wechat_pay_configured,
     generate_order_no,
-    get_user_token_balance,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,12 +74,8 @@ async def handle_get_status(request: Request):
         user = _get_current_user(request)
         conn = _get_online_db_conn(request)
         
-        # 获取token余额
-        balance = get_user_token_balance(conn, user["id"])
-        token_balance = balance['total']
-        
-        # 获取订阅状态
-        status = get_subscription_status(conn, user["id"], token_balance)
+        # 获取订阅状态（已包含使用次数信息）
+        status = get_subscription_status(conn, user["id"])
         
         return status
     except HTTPException:
