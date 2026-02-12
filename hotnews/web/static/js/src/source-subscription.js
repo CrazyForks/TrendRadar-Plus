@@ -6,6 +6,7 @@
 
 import { authState } from './auth-state.js';
 import { Toast } from './auth-ui.js';
+import { events } from './events.js';
 
 const SOURCE_SUB_TAB_ID = 'source-subscription';
 let sourceSubLoaded = false;
@@ -321,8 +322,8 @@ function init() {
     });
 
     // Listen for tab switch events
-    window.addEventListener('tr_tab_switched', (event) => {
-        const categoryId = event?.detail?.categoryId;
+    events.on('tab:switched', (detail) => {
+        const categoryId = detail?.categoryId;
         if (categoryId === SOURCE_SUB_TAB_ID) {
             loadSourceSubscription();
         }
