@@ -113,7 +113,7 @@ function createSubscriptionModal() {
             <div class="subscription-modal-body">
                 <!-- Plans Section -->
                 <div id="subscriptionPlansSection" class="subscription-plans-section">
-                    <div class="subscription-loading">加载中...</div>
+                    <div class="subscription-loading"><div class="tr-skeleton-inline"><div class="tr-skeleton-bar"></div><div class="tr-skeleton-bar"></div><div class="tr-skeleton-bar"></div></div></div>
                 </div>
                 
                 <!-- QR Code Section -->

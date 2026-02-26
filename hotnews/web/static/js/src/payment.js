@@ -122,7 +122,7 @@ function createPaymentModal() {
             <div class="payment-modal-body">
                 <!-- Plans Section -->
                 <div id="paymentPlansSection" class="payment-plans-section">
-                    <div class="payment-loading">加载中...</div>
+                    <div class="payment-loading"><div class="tr-skeleton-inline"><div class="tr-skeleton-bar"></div><div class="tr-skeleton-bar"></div><div class="tr-skeleton-bar"></div></div></div>
                 </div>
                 
                 <!-- QR Code Section (hidden initially) -->
@@ -630,7 +630,7 @@ function createUsageModal() {
                 <div class="usage-section">
                     <div class="usage-section-title">充值记录</div>
                     <div id="rechargeHistoryList" class="usage-history-list">
-                        <div class="usage-loading">加载中...</div>
+                        <div class="usage-loading"><div class="tr-skeleton-inline"><div class="tr-skeleton-bar"></div><div class="tr-skeleton-bar"></div></div></div>
                     </div>
                 </div>
             </div>

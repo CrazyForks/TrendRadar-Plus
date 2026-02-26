@@ -163,8 +163,7 @@ function renderLoading() {
 
     container.innerHTML = `
         <div class="source-sub-loading">
-            <div class="loading-spinner"></div>
-            <div>加载中...</div>
+            <div class="tr-skeleton-inline"><div class="tr-skeleton-bar"></div><div class="tr-skeleton-bar"></div><div class="tr-skeleton-bar"></div></div>
         </div>
     `;
 }
