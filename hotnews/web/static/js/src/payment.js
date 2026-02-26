@@ -524,7 +524,9 @@ async function manualCheckPayment() {
 }
 
 // Expose to window for onclick handlers
-window.openPaymentModal = openPaymentModal;
+// 注意：window.openPaymentModal 由 init.js 设置为 openSubscriptionModal（VIP 订阅）
+// 原始 Token 充值功能通过 openTokenPaymentModal 访问
+window.openTokenPaymentModal = openPaymentModal;
 window.closePaymentModal = closePaymentModal;
 window.selectPlan = selectPlan;
 window.showPlansSection = showPlansSection;
