@@ -3,7 +3,7 @@
  * Modern, minimalist, human-centered design
  */
 
-import { authState } from './auth-state.js';
+import { authState, requireLogin } from './auth-state.js';
 
 // QR Code library (loaded dynamically)
 let QRCode = null;
@@ -61,12 +61,7 @@ function formatTokens(tokens) {
  */
 export async function openPaymentModal() {
     // Check login
-    const user = authState.getUser();
-    if (!user) {
-        window.Toast?.show('请先登录', 'error');
-        window.openLoginModal?.();
-        return;
-    }
+    if (!requireLogin({ toast: '请先登录' })) return;
     
     // Create modal if not exists
     let modal = document.getElementById('paymentModal');
@@ -564,12 +559,7 @@ async function refreshUsageData() {
  */
 async function openUsageModal() {
     // Check login
-    const user = authState.getUser();
-    if (!user) {
-        window.Toast?.show('请先登录', 'error');
-        window.openLoginModal?.();
-        return;
-    }
+    if (!requireLogin({ toast: '请先登录' })) return;
     
     // Create modal if not exists
     let modal = document.getElementById('usageModal');

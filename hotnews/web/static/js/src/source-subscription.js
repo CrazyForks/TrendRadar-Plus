@@ -4,10 +4,9 @@
  * Integrated with authState for reactive auth updates.
  */
 
-import { authState } from './auth-state.js';
+import { authState, requireLogin } from './auth-state.js';
 import { Toast } from './auth-ui.js';
 import { events } from './events.js';
-import { openLoginModal } from './login-modal.js';
 
 const SOURCE_SUB_TAB_ID = 'source-subscription';
 let sourceSubLoaded = false;
@@ -93,10 +92,7 @@ async function loadSubscriptions() {
  * Subscribe to a source
  */
 async function subscribe(sourceType, sourceId) {
-    if (!authState.isLoggedIn()) {
-        openLoginModal();
-        return;
-    }
+    if (!requireLogin()) return;
 
     try {
         const res = await fetch('/api/sources/subscribe', {

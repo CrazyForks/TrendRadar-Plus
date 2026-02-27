@@ -33,36 +33,8 @@ def _get_online_db(request: Request):
     return get_online_db_conn(request.app.state.project_root)
 
 
-def _get_current_user_id(request: Request) -> Optional[int]:
-    """Get current logged-in user ID from session."""
-    from hotnews.kernel.auth.auth_api import _get_session_token
-    from hotnews.kernel.auth.auth_service import validate_session
-    from hotnews.web.user_db import get_user_db_conn
-    
-    session_token = _get_session_token(request)
-    logger.info(f"[Auth] session_token from cookie: {session_token}")
-    
-    if not session_token:
-        logger.info("[Auth] No session token found")
-        return None
-    
-    conn = get_user_db_conn(request.app.state.project_root)
-    is_valid, user_info = validate_session(conn, session_token)
-    
-    logger.info(f"[Auth] validate_session result: is_valid={is_valid}, user_info={user_info}")
-    
-    if not is_valid or not user_info:
-        return None
-    
-    return user_info.get("id")
-
-
-def _require_login(request: Request) -> int:
-    """Require user to be logged in, return user_id or raise 401."""
-    user_id = _get_current_user_id(request)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="请先登录")
-    return user_id
+from hotnews.kernel.auth.deps import get_optional_user_id as _get_current_user_id
+from hotnews.kernel.auth.deps import get_current_user_id as _require_login
 
 
 @router.get("/plans")
