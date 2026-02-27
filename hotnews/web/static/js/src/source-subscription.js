@@ -7,6 +7,7 @@
 import { authState } from './auth-state.js';
 import { Toast } from './auth-ui.js';
 import { events } from './events.js';
+import { openLoginModal } from './login-modal.js';
 
 const SOURCE_SUB_TAB_ID = 'source-subscription';
 let sourceSubLoaded = false;
@@ -93,8 +94,7 @@ async function loadSubscriptions() {
  */
 async function subscribe(sourceType, sourceId) {
     if (!authState.isLoggedIn()) {
-        Toast.show('请先登录', 'info');
-        window.location.href = '/api/auth/page';
+        openLoginModal();
         return;
     }
 
