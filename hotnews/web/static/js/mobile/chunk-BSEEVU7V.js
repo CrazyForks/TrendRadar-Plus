@@ -49,7 +49,6 @@ import{a as f}from"./chunk-YRLDCOZY.js";var c=null,a=null,u=null,b=null,p=0,h=5*
             </div>
             <div class="subscription-benefits">
                 <div class="subscription-benefit" style="white-space: nowrap;">\u2713 \u4E13\u5C5E\u81EA\u5B9A\u4E49\u4E3B\u9898\u8FFD\u8E2A</div>
-                <div class="subscription-benefit" style="white-space: nowrap;">\u2713 \u7B2C\u4E00\u65F6\u95F4\u83B7\u53D6\u5173\u6CE8\u65B0\u95FB</div>
                 <div class="subscription-benefit" style="white-space: nowrap;">\u2713 \u91CD\u70B9\u5173\u6CE8\u5373\u65F6\u9001\u8FBE</div>
             </div>
         `}catch(s){console.error("Load subscription plans error:",s),t.innerHTML=`
