@@ -186,8 +186,8 @@ def init_payment_tables(conn):
         conn.execute("""
             INSERT INTO subscription_plans (name, plan_type, price_cents, duration_days, usage_quota, badge, sort_order, created_at)
             VALUES 
-                ('基础会员', 'monthly', 990, 30, 3, NULL, 1, ?),
-                ('专业会员', 'monthly', 2990, 30, 10, '推荐', 2, ?)
+                ('基础会员', 'lifetime', 990, 36500, 3, NULL, 1, ?),
+                ('专业会员', 'lifetime', 2990, 36500, 10, '推荐', 2, ?)
         """, (now, now))
     
     conn.commit()

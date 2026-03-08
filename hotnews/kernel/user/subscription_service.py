@@ -129,7 +129,7 @@ def get_user_subscription(conn, user_id: int) -> Optional[Dict[str, Any]]:
         "last_reset_at": row[7],
         "auto_renew": row[8],
         "days_remaining": days_remaining,
-        "is_vip": row[2] in ('monthly', 'yearly') and expire_at and expire_at > now,
+        "is_vip": row[2] in ('monthly', 'yearly', 'lifetime') and expire_at and expire_at > now,
     }
 
 

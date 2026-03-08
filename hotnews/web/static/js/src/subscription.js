@@ -170,8 +170,12 @@ async function loadSubscriptionPlans() {
         // Update status hint
         if (hintEl) {
             if (statusData.is_vip) {
-                const expireDate = new Date(statusData.expire_at * 1000);
-                hintEl.innerHTML = `<span class="vip-badge">VIP</span> 到期: ${expireDate.toLocaleDateString('zh-CN')} · 剩余 ${statusData.usage_remaining} 个额度`;
+                if (statusData.plan_type === 'lifetime' || statusData.days_remaining > 30000) {
+                    hintEl.innerHTML = `<span class="vip-badge">VIP</span> 终身有效 · 专属 ${statusData.usage_quota} 个追踪额度`;
+                } else {
+                    const expireDate = new Date(statusData.expire_at * 1000);
+                    hintEl.innerHTML = `<span class="vip-badge">VIP</span> 到期: ${expireDate.toLocaleDateString('zh-CN')} · 剩余 ${statusData.usage_remaining} 个额度`;
+                }
             } else {
                 hintEl.textContent = '开通会员，解锁专属追踪主题';
             }
@@ -211,6 +215,14 @@ async function loadSubscriptionPlans() {
 function renderSubscriptionPlanCard(plan, isRecommended = false) {
     const badge = plan.badge ? `<div class="subscription-plan-badge">${plan.badge}</div>` : '';
     
+    let periodText = `/${plan.plan_type === 'yearly' ? '年' : '月'}`;
+    let durationText = `<div class="subscription-plan-duration">${plan.duration_days} 天有效期</div>`;
+    
+    if (plan.plan_type === 'lifetime') {
+        periodText = '';
+        durationText = `<div class="subscription-plan-duration">永久有效</div>`;
+    }
+    
     return `
         <div class="subscription-plan-card ${isRecommended ? 'recommended' : ''}" 
              data-plan-id="${plan.id}"
@@ -220,10 +232,10 @@ function renderSubscriptionPlanCard(plan, isRecommended = false) {
             <div class="subscription-plan-price">
                 <span class="subscription-plan-currency">¥</span>
                 <span class="subscription-plan-amount">${plan.price}</span>
-                <span class="subscription-plan-period">/月</span>
+                <span class="subscription-plan-period">${periodText}</span>
             </div>
             <div class="subscription-plan-quota">专属追踪 ${plan.usage_quota} 个主题</div>
-            <div class="subscription-plan-duration">${plan.duration_days} 天有效期</div>
+            ${durationText}
         </div>
     `;
 }
