@@ -192,7 +192,9 @@ async function loadSubscriptionPlans() {
                 ${plans.map((plan, idx) => renderSubscriptionPlanCard(plan, idx === 1)).join('')}
             </div>
             <div class="subscription-benefits">
-                <div class="subscription-benefit">✓ 专属自定义主题追踪 &nbsp;&nbsp; ✓ 第一时间获取关注新闻 &nbsp;&nbsp; ✓ 重点关注即时送达</div>
+                <div class="subscription-benefit" style="white-space: nowrap;">✓ 专属自定义主题追踪</div>
+                <div class="subscription-benefit" style="white-space: nowrap;">✓ 第一时间获取关注新闻</div>
+                <div class="subscription-benefit" style="white-space: nowrap;">✓ 重点关注即时送达</div>
             </div>
         `;
         
