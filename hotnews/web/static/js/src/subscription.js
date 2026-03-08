@@ -171,9 +171,9 @@ async function loadSubscriptionPlans() {
         if (hintEl) {
             if (statusData.is_vip) {
                 const expireDate = new Date(statusData.expire_at * 1000);
-                hintEl.innerHTML = `<span class="vip-badge">VIP</span> 到期: ${expireDate.toLocaleDateString('zh-CN')} · 剩余 ${statusData.usage_remaining} 次`;
+                hintEl.innerHTML = `<span class="vip-badge">VIP</span> 到期: ${expireDate.toLocaleDateString('zh-CN')} · 剩余 ${statusData.usage_remaining} 个额度`;
             } else {
-                hintEl.textContent = '开通会员，畅享 AI 总结';
+                hintEl.textContent = '开通会员，解锁专属追踪主题';
             }
         }
         
@@ -188,9 +188,9 @@ async function loadSubscriptionPlans() {
                 ${plans.map((plan, idx) => renderSubscriptionPlanCard(plan, idx === 1)).join('')}
             </div>
             <div class="subscription-benefits">
-                <div class="subscription-benefit">✓ AI 智能总结</div>
-                <div class="subscription-benefit">✓ 文章分类标签</div>
-                <div class="subscription-benefit">✓ 优先技术支持</div>
+                <div class="subscription-benefit">✓ 专属自定义主题追踪</div>
+                <div class="subscription-benefit">✓ 第一时间获取关注新闻</div>
+                <div class="subscription-benefit">✓ 重点关注即时送达</div>
             </div>
         `;
         
@@ -220,9 +220,9 @@ function renderSubscriptionPlanCard(plan, isRecommended = false) {
             <div class="subscription-plan-price">
                 <span class="subscription-plan-currency">¥</span>
                 <span class="subscription-plan-amount">${plan.price}</span>
-                <span class="subscription-plan-period">/${plan.plan_type === 'yearly' ? '年' : '月'}</span>
+                <span class="subscription-plan-period">/月</span>
             </div>
-            <div class="subscription-plan-quota">${plan.usage_quota} 次/周期</div>
+            <div class="subscription-plan-quota">专属追踪 ${plan.usage_quota} 个主题</div>
             <div class="subscription-plan-duration">${plan.duration_days} 天有效期</div>
         </div>
     `;
